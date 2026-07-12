@@ -26,5 +26,13 @@
 	{
 		"caption": "Claude Code IDE: Reject Diff",
 		"command": "claude_ide_diff_reject"
+	},
+	{
+		"caption": "Claude Code IDE: Dev — Reload Plugin (with submodules)",
+		"command": "claude_ide_dev_reload"
+	},
+	{
+		"caption": "Claude Code IDE: Dev — Dump State to JSON",
+		"command": "claude_ide_dump_state"
 	}
 ]

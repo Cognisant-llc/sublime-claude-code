@@ -19,6 +19,6 @@
 	"selection_debounce_ms": 200,
 
 	// Print protocol frames and lifecycle events to the Sublime console
-	// (View > Show Console). Useful while the protocol is being verified.
-	"debug": true
+	// (View > Show Console). Enable when debugging connection issues.
+	"debug": false
 }

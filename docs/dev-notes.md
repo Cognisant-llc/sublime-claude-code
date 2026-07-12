@@ -17,7 +17,7 @@
 4. **`subl --command "terminus_open {...}"` は実行されない**（terminus_open は外部 subl 経由で呼べない）。Launch コマンドはプラグイン内から `window.run_command` で
 5. **プラグインのリロード/再起動でトークン再生成 → 既存セッションは切断**。新セッションは自動接続、既存は `/ide` で再接続
 6. Windows の罠: **.cmd バッチは CRLF 必須**（LF だと静かに誤動作）、日本語引数は CP932 化け → ASCII に。explorer.exe 経由の .cmd 起動はセキュリティ確認で走らないことがある
-7. ST の submodule は hot-reload されない → dev 時は sys.modules 掃除＋`sublime_plugin.reload_plugin`（User/_claude_ide_reload_tmp.py、M3 で製品化予定）
+7. ST の submodule は hot-reload されない → dev 時は sys.modules 掃除＋`sublime_plugin.reload_plugin`（`dev_commands.py` の `claude_ide_dev_reload` として製品化済み）
 
 ## 未検証（Open Questions）
 
@@ -25,8 +25,9 @@
 - /ide 手動選択ルートの実機確認／cwd が lock workspaceFolders 外の場合の自動接続可否
 - マルチウィンドウ: per-window server か active-window routing か（M3 判断）
 
-## dev ワークフロー（現状）
+## dev ワークフロー
 
 - junction: `%APPDATA%\Sublime Text\Packages\ClaudeCodeIDE` → 本リポ
-- 検証: `uv run pytest` → `subl --command reload_claude_ide_tmp` → `uv run python scripts/smoke.py` / `smoke_multi.py` / `smoke_diff.py`（対話）
-- 状態確認: `subl --command dump_claude_ide_state_tmp` → `%TEMP%\claude_ide_state.json`
+- **一発検証**: `uv run python scripts/dev_check.py`（pytest → `claude_ide_dev_reload` → 状態 dump → smoke）。unit のみは `--no-live`
+- 個別: `subl --command claude_ide_dev_reload`（submodule 込み reload）／`subl --command claude_ide_dump_state` → `%TEMP%\claude_ide_state.json`／`scripts/smoke_multi.py`・`smoke_diff.py`（対話）
+- dev コマンド2枚はパッケージ同梱（`dev_commands.py`）。旧 User/_claude_ide_*_tmp.py は削除済み（2026-07-12）

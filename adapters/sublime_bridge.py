@@ -85,6 +85,10 @@ def is_running():
     return _state["server"] is not None
 
 
+def server_port():
+    return _state["port"]
+
+
 def start():
     if is_running():
         log("already running on port {}".format(_state["port"]))

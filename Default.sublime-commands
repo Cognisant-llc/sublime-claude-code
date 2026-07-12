@@ -18,5 +18,13 @@
 	{
 		"caption": "Claude Code IDE: Send Selection as @-mention",
 		"command": "claude_ide_at_mention"
+	},
+	{
+		"caption": "Claude Code IDE: Accept Diff",
+		"command": "claude_ide_diff_accept"
+	},
+	{
+		"caption": "Claude Code IDE: Reject Diff",
+		"command": "claude_ide_diff_reject"
 	}
 ]

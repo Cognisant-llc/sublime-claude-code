@@ -14,10 +14,12 @@ import threading
 import sublime
 
 from ..claudeide import jsonrpc, lockfile
+from ..claudeide.jsonrpc import DEFERRED
 from ..claudeide.mcp import MCPServer, ToolError
 from ..claudeide.pathurl import path_to_uri
 from ..claudeide.session import PendingRequests
 from ..claudeide.wsserver import WSServer
+from . import diff_view
 
 SETTINGS_FILE = "ClaudeCodeIDE.sublime-settings"
 STATUS_KEY = "zz_claude_ide"
@@ -119,6 +121,7 @@ def start():
         "server": server, "mcp": mcp, "pending": pending, "token": token,
         "port": port, "connected": False, "lock_folders": folders,
     })
+    diff_view.set_resolver(_resolve_and_send)
     log(f"started on port {port} (lock written)")
     _refresh_status_bar()
     return port
@@ -187,10 +190,24 @@ def _set_connected(value):
     log("client {}".format("connected" if value else "disconnected"))
 
 
+def _resolve_and_send(request_id, text):
+    """Resolve a deferred tool request (openDiff) and push its response."""
+    pending = _state["pending"]
+    if pending is None:
+        return
+    resp = pending.resolve(request_id, text)
+    if resp is not None:
+        _send(json.dumps(resp, ensure_ascii=False))
+
+
 def _on_disconnected():
     pending = _state["pending"]
     if pending is not None:
         pending.resolve_all("DIFF_REJECTED")  # nothing to send to — just unblock
+    try:
+        run_on_main(diff_view.close_all_silent)
+    except Exception as exc:  # noqa: BLE001
+        log(f"diff cleanup on disconnect failed: {exc}")
     _set_connected(False)
 
 
@@ -387,13 +404,22 @@ def _register_tools(mcp, pending):
        "required": ["filePath"]},
       _tool_save_document)
 
+    t("openDiff", "Open a diff review (blocking until the user accepts or rejects)",
+      {"type": "object", "properties": {
+          "old_file_path": {"type": "string"},
+          "new_file_path": {"type": "string"},
+          "new_file_contents": {"type": "string"},
+          "tab_name": {"type": "string"},
+      }, "required": ["old_file_path", "new_file_contents", "tab_name"]},
+      lambda args, ctx: _tool_open_diff(args, ctx, pending))
+
     t("close_tab", "Close a tab by name",
       {"type": "object", "properties": {"tab_name": {"type": "string"}},
        "required": ["tab_name"]},
       _tool_close_tab)
 
     t("closeAllDiffTabs", "Close all diff tabs", obj,
-      lambda args, ctx: "CLOSED_0_DIFF_TABS")  # M2: real diff tab registry
+      lambda args, ctx: f"CLOSED_{run_on_main(diff_view.close_all)}_DIFF_TABS")
 
     t("executeCode", "Execute python code in a Jupyter kernel",
       {"type": "object", "properties": {"code": {"type": "string"}}},
@@ -531,10 +557,34 @@ def _tool_save_document(args, ctx):
     return run_on_main(op)
 
 
+def _tool_open_diff(args, ctx, pending):
+    """Blocking diff review: park the request, build UI on main, defer."""
+    old_path = args.get("old_file_path") or ""
+    new_path = args.get("new_file_path")
+    contents = args.get("new_file_contents", "")
+    tab_name = args.get("tab_name") or "Claude diff"
+    request_id = ctx["id"]
+
+    pending.add(request_id, {"tab_name": tab_name})
+    log(f"openDiff deferred: id={request_id} tab={tab_name!r} target={old_path!r}")
+
+    def ui():
+        try:
+            diff_view.open_diff_ui(request_id, old_path, new_path, contents, tab_name)
+        except Exception as exc:  # noqa: BLE001 - never leave a pending orphan
+            log(f"openDiff UI failed: {exc}")
+            _resolve_and_send(request_id, "DIFF_REJECTED")
+
+    sublime.set_timeout(ui, 0)
+    return DEFERRED
+
+
 def _tool_close_tab(args, ctx):
     tab_name = args.get("tab_name", "")
 
     def op():
+        if diff_view.close_tab(tab_name):
+            return True
         for window in sublime.windows():
             for view in window.views():
                 label = view.name() or (

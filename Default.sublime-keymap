@@ -1,0 +1,13 @@
+[
+	// Active only inside a Claude diff proposal view (right pane).
+	{
+		"keys": ["ctrl+alt+enter"],
+		"command": "claude_ide_diff_accept",
+		"context": [{ "key": "setting.claude_diff_tab", "operator": "not_equal", "operand": null }]
+	},
+	{
+		"keys": ["ctrl+alt+backspace"],
+		"command": "claude_ide_diff_reject",
+		"context": [{ "key": "setting.claude_diff_tab", "operator": "not_equal", "operand": null }]
+	}
+]

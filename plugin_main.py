@@ -3,6 +3,7 @@
 import sublime
 import sublime_plugin
 
+from .adapters import diff_view
 from .adapters import sublime_bridge as bridge
 
 
@@ -72,9 +73,39 @@ class ClaudeIdeAtMentionCommand(sublime_plugin.TextCommand):
         bridge.send_at_mention(self.view)
 
 
+class ClaudeIdeReplaceContentCommand(sublime_plugin.TextCommand):
+    """Replace the whole buffer (used when accepting a diff into a dirty view)."""
+
+    def run(self, edit, text):
+        self.view.replace(edit, sublime.Region(0, self.view.size()), text)
+
+
+class ClaudeIdeDiffAcceptCommand(sublime_plugin.TextCommand):
+    def run(self, edit):
+        tab = self.view.settings().get("claude_diff_tab")
+        if tab:
+            diff_view.accept(tab)
+
+    def is_enabled(self):
+        return bool(self.view.settings().get("claude_diff_tab"))
+
+
+class ClaudeIdeDiffRejectCommand(sublime_plugin.TextCommand):
+    def run(self, edit):
+        tab = self.view.settings().get("claude_diff_tab")
+        if tab:
+            diff_view.reject(tab)
+
+    def is_enabled(self):
+        return bool(self.view.settings().get("claude_diff_tab"))
+
+
 class ClaudeIdeEventListener(sublime_plugin.EventListener):
     def on_selection_modified_async(self, view):
         bridge.on_selection_modified(view)
 
     def on_activated_async(self, view):
         bridge.on_activated(view)
+
+    def on_pre_close(self, view):
+        diff_view.handle_view_close(view)

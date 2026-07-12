@@ -51,13 +51,16 @@ class ClaudeIdeDumpStateCommand(sublime_plugin.ApplicationCommand):
             for window in sublime.windows():
                 for sheet in window.sheets():
                     fn = sheet.file_name()
-                    if fn:
+                    view = sheet.view()
+                    diff_tab = view.settings().get("claude_diff_tab") if view else None
+                    if fn or diff_tab:
                         group, _index = window.get_sheet_index(sheet)
                         sheets.append(
                             {
-                                "file": os.path.basename(fn),
+                                "file": os.path.basename(fn) if fn else None,
                                 "group": group,
-                                "has_view": sheet.view() is not None,
+                                "has_view": view is not None,
+                                "diff_tab": diff_tab,
                             }
                         )
             state = {
@@ -71,4 +74,6 @@ class ClaudeIdeDumpStateCommand(sublime_plugin.ApplicationCommand):
             state = {"error": str(exc)}
         with open(out, "w", encoding="utf-8") as fh:
             json.dump(state, fh, ensure_ascii=False)
-        sublime.status_message(_PKG + ": state dumped to " + out)
+        # Console-only trace: a status_message here would spam the status bar
+        # when smoke/dev scripts poll this command.
+        print("[{}] state dumped to {}".format(_PKG, out))

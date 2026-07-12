@@ -53,6 +53,43 @@ Claude Code の IDE 統合プロトコル（WebSocket + [MCP](https://modelconte
 
 プロトコルリファレンス: [coder/claudecode.nvim PROTOCOL.md](https://github.com/coder/claudecode.nvim/blob/main/PROTOCOL.md) — ドキュメント化してくれた同プロジェクトに感謝します。
 
+## FAQ
+
+### Claude Code は Sublime Text で使えますか？
+
+使えます — このプラグインで。Claude Code に Sublime Text の組み込みサポートはありません（公式拡張は VS Code と JetBrains のみ）が、IDE 統合は WebSocket/MCP のプロトコルとして実装されています。本プラグインはそのプロトコルを Sublime にネイティブ実装しているため、エディタ内 diff レビュー・選択範囲コンテキスト・`@`-mention が公式拡張と同じ仕組みで動きます。
+
+### Anthropic 公式のプラグインですか？
+
+いいえ。非公式のコミュニティプラグインで、Anthropic とは無関係・未承認です。プロトコルは [claudecode.nvim](https://github.com/coder/claudecode.nvim/blob/main/PROTOCOL.md) プロジェクトがドキュメント化したものに準拠しています。
+
+### どうやって接続しますか？
+
+2通りあります:
+
+1. **手動**: 任意のターミナルで `claude` を起動し、`/ide` で **Sublime Text** を選択
+2. **自動接続**: プラグイン設定で固定 `"port"` を指定し、マシン全体の環境変数に `CLAUDE_CODE_SSE_PORT=<port>` と `ENABLE_IDE_INTEGRATION=true` を登録。以後、新しく起動した `claude` セッションはどのターミナルからでも（Sublime 内の Terminus 含む）起動 約2秒で自動接続します
+
+### Claude がファイルを編集すると何が起きますか？
+
+編集提案が Sublime 内に side-by-side diff タブとして開きます。Accept（`ctrl+alt+enter`）、Reject（`ctrl+alt+backspace`）、または提案を手直ししてから Accept。あなたが判断するまで Claude は待機し、レビューなしにディスクへ書き込まれることはありません。
+
+### コードはどこかに送信されますか？
+
+プラグイン自体は何もネットワークに送りません。`127.0.0.1`（localhost 限定・トークン認証）の WebSocket サーバーとして、同じマシン上の Claude Code プロセスと通信するだけです。Claude Code 自体が Anthropic に送る内容は、IDE 統合なしで使う場合と同じで Claude Code 側の管理下にあります。
+
+### 複数の Claude Code セッションを同時に使えますか？
+
+使えます。サーバーは同時接続に対応しており、複数の claude セッション（プロジェクト別・タスク別など）が同じ Sublime に並列アタッチできます。各セッションの diff レビューは独立して管理されます。
+
+### 対応プラットフォームは？
+
+プロトコルコアは依存ゼロの Python 3.8（Sublime Text 4 のプラグインホスト）。Windows で開発・E2E 検証済み。macOS / Linux も同一コードパスで動作する想定です — 動作報告・issue 歓迎。
+
+### AI ネイティブ IDE ではなく Sublime を使い続ける理由は？
+
+エージェントはエディタの中に住む必要がないからです。Claude Code はターミナルで動き、エディタの仕事は「エージェントの提案を読み、判断し、時々手直しする」こと — Sublime が一瞬で、RAM 100–300 MB でこなす仕事です。疎結合ならエージェントとエディタを独立に更新でき、抱き合わせのサブスクもロックインもありません。
+
 ## ライセンス
 
 MIT

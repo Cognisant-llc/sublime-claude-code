@@ -477,6 +477,20 @@ def _tool_get_current_selection(args, ctx):
     return run_on_main(op)
 
 
+SIDE_LAYOUT = {"cols": [0.0, 0.55, 1.0], "rows": [0.0, 1.0],
+               "cells": [[0, 0, 1, 1], [1, 0, 2, 1]]}
+
+
+def _side_group(window):
+    """Group index for Claude-opened files: a right-hand pane, so the
+    user's own tabs stay untouched. Creates the split on first use."""
+    if not settings().get("open_in_side_group", True):
+        return -1
+    if window.num_groups() == 1:
+        window.set_layout(SIDE_LAYOUT)
+    return window.num_groups() - 1
+
+
 def _tool_open_file(args, ctx):
     file_path = args.get("filePath")
     if not file_path or not os.path.exists(file_path):
@@ -487,7 +501,8 @@ def _tool_open_file(args, ctx):
     def op():
         window = sublime.active_window()
         flags = sublime.TRANSIENT if preview else 0
-        view = window.open_file(file_path, flags)
+        group = _side_group(window)
+        view = window.open_file(file_path, flags, group=group)
         if make_frontmost:
             window.focus_view(view)
             if hasattr(window, "bring_to_front"):

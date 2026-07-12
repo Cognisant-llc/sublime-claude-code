@@ -2,6 +2,10 @@
 	// Start the IDE server when Sublime starts.
 	"auto_start": true,
 
+	// Open files that Claude shows (openFile) in a right-hand side group,
+	// keeping your own tabs untouched. Set false to open in the active group.
+	"open_in_side_group": true,
+
 	// Fixed server port (1024-65535), or null for a random port.
 	// A fixed port lets you set machine-wide env vars once
 	// (CLAUDE_CODE_SSE_PORT=<port>, ENABLE_IDE_INTEGRATION=true) so every

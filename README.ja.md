@@ -6,6 +6,8 @@
 
 > **非公式のコミュニティプラグインです** — Anthropic とは無関係であり、承認を受けたものではありません。「Claude」および「Claude Code」は Anthropic, PBC の商標です。
 
+![Claude Code が Sublime Text 内で編集を提案する様子: ターミナルで claude が動き、side-by-side diff がエディタに開き、Accept でファイルに反映される](docs/demo.gif)
+
 **ステータス: コア機能は動作します** — サーバー＋コンテキスト共有（M1）、エディタ内 diff レビュー（M2）、複数セッション並列接続まで実装・E2E 検証済み。磨き込みフェーズ（M3）進行中。Package Control 未登録。
 
 ## なぜ今 Sublime Text か

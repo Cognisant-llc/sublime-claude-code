@@ -19,11 +19,34 @@
 6. Windows の罠: **.cmd バッチは CRLF 必須**（LF だと静かに誤動作）、日本語引数は CP932 化け → ASCII に。explorer.exe 経由の .cmd 起動はセキュリティ確認で走らないことがある
 7. ST の submodule は hot-reload されない → dev 時は sys.modules 掃除＋`sublime_plugin.reload_plugin`（`dev_commands.py` の `claude_ide_dev_reload` として製品化済み）
 
+## 実 claude での diff レビュー E2E（2026-07-12、デモ撮影で発見・修正）
+
+8. **openDiff の応答は content 2要素が必須**: `["FILE_SAVED", <保存後の全文>]` / `["DIFF_REJECTED", <tab_name>]`。
+   **PROTOCOL.md は1要素しか書いていない（ドキュメントドリフト）** — 正は claudecode.nvim の実装（diff.lua）。
+   1要素だけ返すと実 claude は許可質問に留まり続け、編集をリトライして openDiff を再送する（tab hash が増殖）。
+   自作スモーククライアントは形を検証しないため気づけない＝**実クライアント E2E でのみ捕捉可能だった**
+9. **`bypassPermissions` モードでは openDiff レビューは発生しない**（Edit が即ディスク書き込み）。
+   デモ/検証は project-local `.claude/settings.json` で `defaultMode: "default"` にして行う
+10. **Sublime が env 登録より前から起動していると Terminus のシェルは CLAUDE_CODE_SSE_PORT を継承しない**
+    → `terminus_open` の `env` パラメータで注入可（ST 再起動不要）
+11. **クライアントプロセスを強制 kill すると WS がゾンビ化**（clients カウント残留・status ⚡ のまま）。
+    次の書き込みで reap される。即クリアはサーバー reload
+12. claude の初回オンボーディング（フォルダ信頼「Security guide」・「use my browser」）は**フォルダ/状態ごとに TUI をブロック**する
+    → デモ撮影前にウォームアップ起動で消化しておく。なお lock の workspaceFolders はウィンドウ/フォルダ変化で自動更新される（実測）
+
 ## 未検証（Open Questions）
 
-- openDiff FILE_SAVED 後、Claude はディスク再読込するか（M2 実測残）→ 記事ネタ
-- /ide 手動選択ルートの実機確認／cwd が lock workspaceFolders 外の場合の自動接続可否
+- openDiff FILE_SAVED 後、Claude はディスク再読込するか（応答2要素目に全文を返すので実質解消。厳密な再読込タイミングは未計測）
+- /ide 手動選択ルートの実機確認
 - マルチウィンドウ: per-window server か active-window routing か（M3 判断）
+- accept 時に即 UI teardown している（claudecode.nvim は close_tab 到着まで保持）。close_tab ハンドラが寛容なので実害は未観測だが、將来 close_tab 駆動へ寄せるか要検討
+
+## デモ GIF 撮影パイプライン（再現手順）
+
+- シーン: `~/demo/greet.py`＋project-local settings（defaultMode: default）。User/`_demo_claude_tmp.py`（撮影後削除）が terminus_open(env注入)＋タイピングアニメ＋accept を提供
+- 録画: ffmpeg gdigrab 領域 (8,56) 1264x736（DWM 不可視境界 8px を考慮、タイトルバー除外）、h264_nvenc、-t 固定で自己finalize
+- 編集: trim+setpts で可変速（待ち5倍速・見せ場等速）→ palettegen/paletteuse で GIF（960px/12fps/~640KB）
+- 罠: SetForegroundWindow はフォアグラウンドロックで無効 → 邪魔な窓（Chrome）は SW_MINIMIZE で退かす／`subl` への `~` パスは `C:\c\...` に化ける（Windows 形式パスを渡す）
 
 ## dev ワークフロー
 

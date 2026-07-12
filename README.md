@@ -6,6 +6,8 @@ Native [Claude Code](https://claude.com/product/claude-code) IDE integration for
 
 > **Unofficial community plugin** — not affiliated with or endorsed by Anthropic. "Claude" and "Claude Code" are trademarks of Anthropic, PBC.
 
+![Claude Code proposing an edit in Sublime Text: the terminal runs claude, a side-by-side diff opens in the editor, and Accept writes the file](docs/demo.gif)
+
 **Status: core features working** — server + context sharing (M1), in-editor diff review (M2), and parallel multi-session support are implemented and tested end-to-end. Polish phase (M3) in progress; not yet on Package Control.
 
 ## Motivation — why Sublime Text in the LLM era?

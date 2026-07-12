@@ -107,13 +107,13 @@ def _handshake(port, token, key=RFC_KEY):
 
 @pytest.fixture()
 def server():
-    inbox = queue.Queue()
-    events = queue.Queue()
+    inbox = queue.Queue()   # (client_id, text)
+    events = queue.Queue()  # ("connect"|"disconnect", client_id)
     srv = WSServer(
         auth_token="secret-token",
-        on_message=inbox.put,
-        on_connect=lambda: events.put("connect"),
-        on_disconnect=lambda: events.put("disconnect"),
+        on_message=lambda cid, text: inbox.put((cid, text)),
+        on_connect=lambda cid: events.put(("connect", cid)),
+        on_disconnect=lambda cid: events.put(("disconnect", cid)),
     )
     port = srv.start()
     yield srv, port, inbox, events
@@ -140,12 +140,12 @@ def test_accepts_correct_token_and_exchanges_messages(server):
     s, resp = _handshake(port, "secret-token")
     assert b"101" in resp
     assert RFC_ACCEPT.encode() in resp
-    assert events.get(timeout=3) == "connect"
+    assert events.get(timeout=3) == ("connect", 1)
     assert srv.is_connected
 
     # client -> server (client frames must be masked)
     s.sendall(encode_frame(OP_TEXT, b'{"jsonrpc":"2.0","method":"hi"}', mask=True))
-    assert inbox.get(timeout=3) == '{"jsonrpc":"2.0","method":"hi"}'
+    assert inbox.get(timeout=3) == (1, '{"jsonrpc":"2.0","method":"hi"}')
 
     # server -> client (server frames are not masked)
     srv.send_text('{"ok":1}')
@@ -182,8 +182,60 @@ def test_accepts_correct_token_and_exchanges_messages(server):
 
     # close handshake -> disconnect callback
     s.sendall(encode_frame(OP_CLOSE, b"", mask=True))
-    assert events.get(timeout=3) == "disconnect"
+    assert events.get(timeout=3) == ("disconnect", 1)
     s.close()
+
+
+def _recv_frames(sock, want=1, timeout=3.0):
+    buf = bytearray()
+    frames = []
+    deadline = time.time() + timeout
+    while len(frames) < want and time.time() < deadline:
+        try:
+            chunk = sock.recv(4096)
+        except socket.timeout:
+            continue
+        if not chunk:
+            break
+        buf.extend(chunk)
+        frames.extend(decode_frames(buf))
+    return frames
+
+
+def test_two_clients_connect_route_and_broadcast(server):
+    srv, port, inbox, events = server
+    s1, r1 = _handshake(port, "secret-token")
+    assert b"101" in r1
+    assert events.get(timeout=3) == ("connect", 1)
+    s2, r2 = _handshake(port, "secret-token")
+    assert b"101" in r2
+    assert events.get(timeout=3) == ("connect", 2)
+    assert srv.client_count == 2
+
+    # per-client message attribution
+    s1.sendall(encode_frame(OP_TEXT, b'{"from":1}', mask=True))
+    s2.sendall(encode_frame(OP_TEXT, b'{"from":2}', mask=True))
+    got = {inbox.get(timeout=3), inbox.get(timeout=3)}
+    assert got == {(1, '{"from":1}'), (2, '{"from":2}')}
+
+    # send_to routes to exactly one client
+    assert srv.send_to(2, '{"only":2}') is True
+    assert _recv_frames(s2) == [(True, OP_TEXT, b'{"only":2}')]
+    assert _recv_frames(s1, want=1, timeout=0.5) == []
+
+    # broadcast reaches both
+    assert srv.broadcast('{"all":true}') == 2
+    assert _recv_frames(s1) == [(True, OP_TEXT, b'{"all":true}')]
+    assert _recv_frames(s2) == [(True, OP_TEXT, b'{"all":true}')]
+
+    # one disconnect leaves the other alive
+    s1.sendall(encode_frame(OP_CLOSE, b"", mask=True))
+    assert events.get(timeout=3) == ("disconnect", 1)
+    assert srv.client_count == 1
+    assert srv.send_to(2, '{"still":2}') is True
+    assert _recv_frames(s2) == [(True, OP_TEXT, b'{"still":2}')]
+    s1.close()
+    s2.close()
 
 
 def test_port_is_in_claude_range(server):

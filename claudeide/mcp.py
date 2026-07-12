@@ -70,8 +70,10 @@ class MCPServer:
 
     # -- transport entry point --
 
-    def handle_text(self, text: str) -> Optional[str]:
-        """Handle one incoming frame; returns outgoing frame text or None."""
+    def handle_text(self, text: str, client_id: Any = None) -> Optional[str]:
+        """Handle one incoming frame; returns outgoing frame text or None.
+        ``client_id`` is threaded into tool ctx so deferred tools can route
+        their eventual response to the right connection."""
         try:
             message = jsonrpc.parse(text)
         except ValueError:
@@ -79,8 +81,8 @@ class MCPServer:
                 jsonrpc.error_response(None, jsonrpc.PARSE_ERROR, "parse error"),
                 ensure_ascii=False,
             )
-        self._log("<- {}".format(message.get("method") or "response"))
-        resp = self.dispatcher.dispatch(message)
+        self._log("<- #{} {}".format(client_id, message.get("method") or "response"))
+        resp = self.dispatcher.dispatch(message, {"client_id": client_id})
         if resp is None:
             return None
         return json.dumps(resp, ensure_ascii=False)

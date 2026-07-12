@@ -136,14 +136,21 @@ def decode_frames(buf: bytearray):
 
 
 class WSServer:
-    """Single-client threaded WebSocket server bound to 127.0.0.1."""
+    """Multi-client threaded WebSocket server bound to 127.0.0.1.
+
+    Several Claude Code sessions may connect concurrently; each gets an
+    integer ``client_id``. Callbacks receive that id:
+    ``on_message(client_id, text)``, ``on_connect(client_id)``,
+    ``on_disconnect(client_id)``. Responses are routed with
+    :meth:`send_to`; notifications fan out with :meth:`broadcast`.
+    """
 
     def __init__(
         self,
         auth_token: str,
-        on_message: Callable[[str], None],
-        on_connect: Optional[Callable[[], None]] = None,
-        on_disconnect: Optional[Callable[[], None]] = None,
+        on_message: Callable[[int, str], None],
+        on_connect: Optional[Callable[[int], None]] = None,
+        on_disconnect: Optional[Callable[[int], None]] = None,
         port_range: Tuple[int, int] = (10000, 65535),
         logger: Optional[Callable[[str], None]] = None,
     ) -> None:
@@ -155,9 +162,10 @@ class WSServer:
         self._log = logger or (lambda msg: None)
 
         self._sock = None  # type: Optional[socket.socket]
-        self._client = None  # type: Optional[socket.socket]
-        self._client_lock = threading.Lock()
+        self._clients = {}  # type: dict
+        self._clients_lock = threading.Lock()
         self._send_lock = threading.Lock()
+        self._next_client_id = 0
         self._running = False
         self._threads = []
         self.port = None  # type: Optional[int]
@@ -176,7 +184,7 @@ class WSServer:
                 last_err = exc
                 sock.close()
                 continue
-            sock.listen(1)
+            sock.listen(5)
             sock.settimeout(0.5)
             self._sock = sock
             self.port = port
@@ -193,7 +201,10 @@ class WSServer:
 
     def stop(self) -> None:
         self._running = False
-        self._drop_client(notify=False)
+        with self._clients_lock:
+            client_ids = list(self._clients.keys())
+        for client_id in client_ids:
+            self._drop_client(client_id, notify=False)
         if self._sock is not None:
             try:
                 self._sock.close()
@@ -207,22 +218,37 @@ class WSServer:
 
     @property
     def is_connected(self) -> bool:
-        return self._client is not None
+        return self.client_count > 0
+
+    @property
+    def client_count(self) -> int:
+        with self._clients_lock:
+            return len(self._clients)
 
     # -- sending --
 
-    def send_text(self, text: str) -> bool:
+    def send_to(self, client_id: int, text: str) -> bool:
+        with self._clients_lock:
+            conn = self._clients.get(client_id)
+        if conn is None:
+            return False
         with self._send_lock:
-            client = self._client
-            if client is None:
-                return False
             try:
-                client.sendall(encode_frame(OP_TEXT, text.encode("utf-8")))
+                conn.sendall(encode_frame(OP_TEXT, text.encode("utf-8")))
                 return True
             except OSError as exc:
-                self._log(f"send failed: {exc}")
-                self._drop_client()
-                return False
+                self._log(f"send to #{client_id} failed: {exc}")
+        self._drop_client(client_id)
+        return False
+
+    def broadcast(self, text: str) -> int:
+        with self._clients_lock:
+            client_ids = list(self._clients.keys())
+        return sum(1 for cid in client_ids if self.send_to(cid, text))
+
+    # Backward-friendly alias: notifications go to everyone.
+    def send_text(self, text: str) -> bool:
+        return self.broadcast(text) > 0
 
     # -- internals --
 
@@ -284,19 +310,19 @@ class WSServer:
         if not self._handshake(conn):
             return
 
-        with self._client_lock:
-            if self._client is not None:
-                self._log("replacing previous client connection")
-                self._drop_client()
-            self._client = conn
+        with self._clients_lock:
+            self._next_client_id += 1
+            client_id = self._next_client_id
+            self._clients[client_id] = conn
         conn.settimeout(0.5)
+        self._log(f"client #{client_id} connected ({self.client_count} total)")
         if self._on_connect:
-            self._safe_callback(self._on_connect)
+            self._safe_callback(lambda: self._on_connect(client_id))
 
         buf = bytearray()
         fragments = bytearray()
         fragment_opcode = None
-        while self._running and self._client is conn:
+        while self._running and self._is_registered(client_id, conn):
             try:
                 chunk = conn.recv(65536)
             except socket.timeout:
@@ -309,7 +335,7 @@ class WSServer:
             try:
                 frames = decode_frames(buf)
             except ValueError as exc:
-                self._log(f"protocol error: {exc}")
+                self._log(f"protocol error from #{client_id}: {exc}")
                 break
             closed = False
             for fin, opcode, payload in frames:
@@ -336,28 +362,28 @@ class WSServer:
                     if fin and fragment_opcode == OP_TEXT:
                         text = fragments.decode("utf-8", errors="replace")
                         fragments = bytearray()
-                        self._safe_callback(lambda t=text: self._on_message(t))
+                        self._safe_callback(
+                            lambda t=text: self._on_message(client_id, t))
             if closed:
                 break
 
-        if self._client is conn:
-            self._drop_client()
-        else:
+        self._drop_client(client_id)
+
+    def _is_registered(self, client_id: int, conn: socket.socket) -> bool:
+        with self._clients_lock:
+            return self._clients.get(client_id) is conn
+
+    def _drop_client(self, client_id: int, notify: bool = True) -> None:
+        with self._clients_lock:
+            conn = self._clients.pop(client_id, None)
+        if conn is not None:
             try:
                 conn.close()
             except OSError:
                 pass
-
-    def _drop_client(self, notify: bool = True) -> None:
-        with self._client_lock:
-            client, self._client = self._client, None
-        if client is not None:
-            try:
-                client.close()
-            except OSError:
-                pass
+            self._log(f"client #{client_id} disconnected ({self.client_count} total)")
             if notify and self._on_disconnect:
-                self._safe_callback(self._on_disconnect)
+                self._safe_callback(lambda: self._on_disconnect(client_id))
 
     def _safe_callback(self, fn: Callable[[], None]) -> None:
         try:

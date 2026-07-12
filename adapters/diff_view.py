@@ -20,7 +20,7 @@ DIFF_LAYOUT = {"cols": [0.0, 0.5, 1.0], "rows": [0.0, 1.0], "cells": [[0, 0, 1, 
 
 _diffs = {}         # tab_name -> record dict
 _phantom_sets = {}  # right view id -> PhantomSet (must be retained)
-_resolver = None    # set by bridge: fn(request_id, outcome_text)
+_resolver = None    # set by bridge: fn(client_id, request_id, outcome_text)
 
 
 def set_resolver(fn):
@@ -28,9 +28,9 @@ def set_resolver(fn):
     _resolver = fn
 
 
-def _resolve(request_id, text):
+def _resolve(client_id, request_id, text):
     if _resolver is not None:
-        _resolver(request_id, text)
+        _resolver(client_id, request_id, text)
 
 
 def active_count():
@@ -40,7 +40,8 @@ def active_count():
 # ---------- UI construction ----------
 
 
-def open_diff_ui(request_id, old_file_path, new_file_path, new_file_contents, tab_name):
+def open_diff_ui(client_id, request_id, old_file_path, new_file_path,
+                 new_file_contents, tab_name):
     window = sublime.active_window()
     prev_layout = window.layout()
 
@@ -83,6 +84,7 @@ def open_diff_ui(request_id, old_file_path, new_file_path, new_file_contents, ta
     _add_action_phantom(right, tab_name)
 
     _diffs[tab_name] = {
+        "client_id": client_id,
         "request_id": request_id,
         "left_id": left.id(),
         "right_id": right.id(),
@@ -145,7 +147,7 @@ def accept(tab_name):
         sublime.error_message(f"Claude diff: writing {rec['target']} failed:\n{exc}")
         return False
     rec["resolved"] = True
-    _resolve(rec["request_id"], "FILE_SAVED")
+    _resolve(rec["client_id"], rec["request_id"], "FILE_SAVED")
     _teardown(tab_name)
     sublime.status_message(f"Claude diff accepted → {os.path.basename(rec['target'])}")
     return True
@@ -156,7 +158,7 @@ def reject(tab_name):
     if rec is None or rec["resolved"]:
         return False
     rec["resolved"] = True
-    _resolve(rec["request_id"], "DIFF_REJECTED")
+    _resolve(rec["client_id"], rec["request_id"], "DIFF_REJECTED")
     _teardown(tab_name)
     sublime.status_message("Claude diff rejected")
     return True
@@ -168,7 +170,7 @@ def handle_view_close(view):
     for tab_name, rec in list(_diffs.items()):
         if rec["right_id"] == vid and not rec["resolved"]:
             rec["resolved"] = True
-            _resolve(rec["request_id"], "DIFF_REJECTED")
+            _resolve(rec["client_id"], rec["request_id"], "DIFF_REJECTED")
             sublime.set_timeout(lambda t=tab_name: _teardown(t), 0)
             return
 
@@ -191,8 +193,17 @@ def close_all():
     return len(tabs)
 
 
+def close_for_client(client_id):
+    """One session disconnected: tear down only its tabs, silently
+    (its pending entries are already resolved by the bridge)."""
+    for tab_name, rec in list(_diffs.items()):
+        if rec["client_id"] == client_id:
+            rec["resolved"] = True
+            _teardown(tab_name)
+
+
 def close_all_silent():
-    """Client disconnected: tear down UI without sending responses."""
+    """Server stopping: tear down all diff UI without sending responses."""
     for tab_name, rec in list(_diffs.items()):
         rec["resolved"] = True
         _teardown(tab_name)

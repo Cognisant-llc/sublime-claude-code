@@ -54,7 +54,9 @@ class Dispatcher:
     def register(self, method: str, handler: Handler) -> None:
         self._handlers[method] = handler
 
-    def dispatch(self, message: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    def dispatch(
+        self, message: Dict[str, Any], extra_ctx: Optional[Dict[str, Any]] = None
+    ) -> Optional[Dict[str, Any]]:
         """Route one parsed message. Returns a response dict, or None when
         no response should be sent (notification, or DEFERRED handler)."""
         method = message.get("method")
@@ -67,8 +69,11 @@ class Dispatcher:
                 return error_response(msg_id, METHOD_NOT_FOUND, f"method not found: {method}")
             return None
 
+        ctx = {"id": msg_id}
+        if extra_ctx:
+            ctx.update(extra_ctx)
         try:
-            result = handler(message.get("params"), {"id": msg_id})
+            result = handler(message.get("params"), ctx)
         except Exception as exc:  # noqa: BLE001 - protocol boundary
             if is_request:
                 return error_response(msg_id, INTERNAL_ERROR, f"{type(exc).__name__}: {exc}")

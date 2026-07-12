@@ -7,7 +7,6 @@ On FILE_SAVED it verifies the file content on disk.
 Usage:  uv run python scripts/smoke_diff.py
 """
 
-import json
 import os
 import sys
 import tempfile
@@ -18,7 +17,10 @@ from scripts.smoke import find_sublime_locks  # noqa: E402
 from tests.wsclient import WSClient  # noqa: E402
 
 OLD_CONTENT = "def greet():\n    print('hello')\n\n\ngreet()\n"
-NEW_CONTENT = "def greet(name: str = 'Sublime') -> None:\n    print(f'hello, {name}!')\n\n\ngreet('Claude')\n"
+NEW_CONTENT = (
+    "def greet(name: str = 'Sublime') -> None:\n"
+    "    print(f'hello, {name}!')\n\n\ngreet('Claude')\n"
+)
 
 
 def main():
@@ -40,7 +42,8 @@ def main():
 
     client.send_json({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
     names = sorted(t["name"] for t in client.recv_json()["result"]["tools"])
-    print(f"OK tools/list   {len(names)} tools (openDiff {'present' if 'openDiff' in names else 'MISSING'})")
+    has_diff = "present" if "openDiff" in names else "MISSING"
+    print(f"OK tools/list   {len(names)} tools (openDiff {has_diff})")
     if "openDiff" not in names:
         return 1
 
@@ -49,7 +52,8 @@ def main():
         fh.write(OLD_CONTENT)
     print(f"OK target file  {target}")
 
-    print(">> openDiff sent — Sublime に diff が開きます。右ペインの ✓Accept または ✗Reject を押してください…")
+    print(">> openDiff sent — Sublime に diff が開きます。"
+          "右ペインの ✓Accept または ✗Reject を押してください…")
     client.send_json({
         "jsonrpc": "2.0", "id": "diff-e2e-1", "method": "tools/call",
         "params": {"name": "openDiff", "arguments": {

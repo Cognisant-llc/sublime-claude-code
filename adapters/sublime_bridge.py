@@ -99,14 +99,39 @@ def start():
     pending = PendingRequests()
     _register_tools(mcp, pending)
 
-    server = WSServer(
-        auth_token=token,
-        on_message=lambda text: _on_message(text),
-        on_connect=lambda: _set_connected(True),
-        on_disconnect=lambda: _on_disconnected(),
-        logger=log,
-    )
-    port = server.start()
+    # A fixed port (settings "port") lets machine-wide env vars point every
+    # claude session here permanently; fall back to a random port if busy.
+    port_setting = settings().get("port")
+    ranges = []
+    if isinstance(port_setting, int) and 1024 <= port_setting <= 65535:
+        ranges.append((port_setting, port_setting))
+    ranges.append((10000, 65535))
+
+    server = None
+    port = None
+    last_err = None
+    for rng in ranges:
+        candidate = WSServer(
+            auth_token=token,
+            on_message=_on_message,
+            on_connect=_on_client_connect,
+            on_disconnect=_on_client_disconnect,
+            port_range=rng,
+            logger=log,
+        )
+        try:
+            port = candidate.start()
+            server = candidate
+            break
+        except OSError as exc:
+            last_err = exc
+            continue
+    if server is None:
+        raise OSError(f"could not start IDE server: {last_err}")
+    if isinstance(port_setting, int) and port != port_setting:
+        sublime.status_message(
+            f"Claude Code IDE: fixed port {port_setting} busy — using {port} "
+            "(auto-connect env vars will not match)")
 
     folders = _all_folders()
     lockfile.write_lock(
@@ -130,9 +155,13 @@ def start():
 def stop():
     server = _state["server"]
     pending = _state["pending"]
-    if pending is not None:
-        for resp in pending.resolve_all("DIFF_REJECTED"):
-            _send(json.dumps(resp, ensure_ascii=False))
+    if pending is not None and server is not None:
+        for client_id, resp in pending.resolve_all("DIFF_REJECTED"):
+            server.send_to(client_id, json.dumps(resp, ensure_ascii=False))
+    try:
+        run_on_main(diff_view.close_all_silent)
+    except Exception as exc:  # noqa: BLE001
+        log(f"diff cleanup on stop failed: {exc}")
     if server is not None:
         server.stop()
     if _state["port"] is not None:
@@ -163,52 +192,59 @@ def launch_env_line():
 # ---------- transport plumbing ----------
 
 
-def _on_message(text):
-    log(f"<- {text[:300]}")
+def _on_message(client_id, text):
+    log(f"<- #{client_id} {text[:300]}")
     mcp = _state["mcp"]
-    if mcp is None:
-        return
-    out = mcp.handle_text(text)
-    if out is not None:
-        _send(out)
-
-
-def _send(text):
     server = _state["server"]
-    if server is not None:
-        log(f"-> {text[:300]}")
-        server.send_text(text)
+    if mcp is None or server is None:
+        return
+    out = mcp.handle_text(text, client_id)
+    if out is not None:
+        log(f"-> #{client_id} {out[:300]}")
+        server.send_to(client_id, out)
 
 
 def _notify(method, params):
-    _send(json.dumps(jsonrpc.notification(method, params), ensure_ascii=False))
+    """Broadcast an IDE-originated notification to every connected session."""
+    server = _state["server"]
+    if server is not None:
+        server.broadcast(json.dumps(jsonrpc.notification(method, params), ensure_ascii=False))
 
 
-def _set_connected(value):
-    _state["connected"] = value
+def client_count():
+    server = _state["server"]
+    return server.client_count if server is not None else 0
+
+
+def _on_client_connect(client_id):
+    _state["connected"] = True
     _refresh_status_bar()
-    log("client {}".format("connected" if value else "disconnected"))
+    log(f"client #{client_id} connected ({client_count()} total)")
 
 
-def _resolve_and_send(request_id, text):
-    """Resolve a deferred tool request (openDiff) and push its response."""
+def _resolve_and_send(client_id, request_id, text):
+    """Resolve a deferred tool request (openDiff) and push its response to
+    the session that asked."""
     pending = _state["pending"]
-    if pending is None:
+    server = _state["server"]
+    if pending is None or server is None:
         return
-    resp = pending.resolve(request_id, text)
+    resp = pending.resolve(client_id, request_id, text)
     if resp is not None:
-        _send(json.dumps(resp, ensure_ascii=False))
+        server.send_to(client_id, json.dumps(resp, ensure_ascii=False))
 
 
-def _on_disconnected():
+def _on_client_disconnect(client_id):
     pending = _state["pending"]
     if pending is not None:
-        pending.resolve_all("DIFF_REJECTED")  # nothing to send to — just unblock
+        pending.resolve_all_for(client_id, "DIFF_REJECTED")  # unblock; peer is gone
     try:
-        run_on_main(diff_view.close_all_silent)
+        run_on_main(lambda: diff_view.close_for_client(client_id))
     except Exception as exc:  # noqa: BLE001
         log(f"diff cleanup on disconnect failed: {exc}")
-    _set_connected(False)
+    _state["connected"] = client_count() > 0
+    _refresh_status_bar()
+    log(f"client #{client_id} disconnected ({client_count()} total)")
 
 
 # ---------- status bar ----------
@@ -217,7 +253,10 @@ def _on_disconnected():
 def _status_text():
     if not is_running():
         return ""
-    if _state["connected"]:
+    count = client_count()
+    if count > 1:
+        return "Claude ⚡×{}:{}".format(count, _state["port"])
+    if count == 1:
         return "Claude ⚡:{}".format(_state["port"])
     return "Claude ○:{}".format(_state["port"])
 
@@ -453,6 +492,7 @@ def _tool_open_file(args, ctx):
             window.focus_view(view)
             if hasattr(window, "bring_to_front"):
                 window.bring_to_front()
+        sublime.status_message(f"Claude opened: {os.path.basename(file_path)}")
         _select_when_loaded(
             view,
             args.get("startText"),
@@ -564,16 +604,18 @@ def _tool_open_diff(args, ctx, pending):
     contents = args.get("new_file_contents", "")
     tab_name = args.get("tab_name") or "Claude diff"
     request_id = ctx["id"]
+    client_id = ctx.get("client_id")
 
-    pending.add(request_id, {"tab_name": tab_name})
-    log(f"openDiff deferred: id={request_id} tab={tab_name!r} target={old_path!r}")
+    pending.add(client_id, request_id, {"tab_name": tab_name})
+    log(f"openDiff deferred: client=#{client_id} id={request_id} tab={tab_name!r}")
 
     def ui():
         try:
-            diff_view.open_diff_ui(request_id, old_path, new_path, contents, tab_name)
+            diff_view.open_diff_ui(client_id, request_id, old_path, new_path,
+                                   contents, tab_name)
         except Exception as exc:  # noqa: BLE001 - never leave a pending orphan
             log(f"openDiff UI failed: {exc}")
-            _resolve_and_send(request_id, "DIFF_REJECTED")
+            _resolve_and_send(client_id, request_id, "DIFF_REJECTED")
 
     sublime.set_timeout(ui, 0)
     return DEFERRED

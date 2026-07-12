@@ -27,14 +27,14 @@ def stack():
     )
 
     def open_diff(args, ctx):
-        pending.add(ctx["id"], {"tab_name": args.get("tab_name")})
+        pending.add(ctx["client_id"], ctx["id"], {"tab_name": args.get("tab_name")})
         return DEFERRED
 
     mcp.register_tool("openDiff", "Blocking diff review", {"type": "object"}, open_diff)
 
     server = WSServer(
         auth_token=token,
-        on_message=lambda text: _pump(server, mcp, text),
+        on_message=lambda cid, text: _pump(server, mcp, cid, text),
     )
     port = server.start()
     client = WSClient(port, token)
@@ -43,10 +43,10 @@ def stack():
     server.stop()
 
 
-def _pump(server, mcp, text):
-    out = mcp.handle_text(text)
+def _pump(server, mcp, client_id, text):
+    out = mcp.handle_text(text, client_id)
     if out is not None:
-        server.send_text(out)
+        server.send_to(client_id, out)
 
 
 def test_full_mcp_flow(stack):
@@ -90,15 +90,44 @@ def test_deferred_open_diff_resolves_later(stack):
     })
     # no immediate answer (blocking tool)
     assert client.recv_json(timeout=0.5) is None
-    assert pending.get_meta("diff-1") == {"tab_name": "review: x.py"}
+    assert pending.get_meta(1, "diff-1") == {"tab_name": "review: x.py"}
 
     # ... user clicks Accept -> UI thread resolves
-    resp = pending.resolve("diff-1", "FILE_SAVED")
-    server.send_text(json.dumps(resp, ensure_ascii=False))
+    resp = pending.resolve(1, "diff-1", "FILE_SAVED")
+    server.send_to(1, json.dumps(resp, ensure_ascii=False))
 
     got = client.recv_json()
     assert got["id"] == "diff-1"
     assert got["result"]["content"][0]["text"] == "FILE_SAVED"
+
+
+def test_two_sessions_with_colliding_request_ids(stack):
+    """Two Claude sessions call openDiff with the SAME JSON-RPC id — the
+    pending map must keep them apart and route each outcome correctly."""
+    server, mcp, pending, client1 = stack
+    client2 = WSClient(server.port, client1_token_of(stack))
+
+    for c in (client1, client2):
+        c.send_json({
+            "jsonrpc": "2.0", "id": "diff-X", "method": "tools/call",
+            "params": {"name": "openDiff",
+                       "arguments": {"tab_name": f"tab-{id(c)}", "new_file_contents": "z"}},
+        })
+    assert client1.recv_json(timeout=0.5) is None
+    assert client2.recv_json(timeout=0.5) is None
+
+    # resolve client 1 as saved, client 2 as rejected
+    server.send_to(1, json.dumps(pending.resolve(1, "diff-X", "FILE_SAVED")))
+    server.send_to(2, json.dumps(pending.resolve(2, "diff-X", "DIFF_REJECTED")))
+
+    assert client1.recv_json()["result"]["content"][0]["text"] == "FILE_SAVED"
+    assert client2.recv_json()["result"]["content"][0]["text"] == "DIFF_REJECTED"
+    client2.close()
+
+
+def client1_token_of(stack):
+    server, _mcp, _pending, _client = stack
+    return server._auth_token
 
 
 def test_server_push_notification_reaches_client(stack):

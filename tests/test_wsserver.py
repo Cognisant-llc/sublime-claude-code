@@ -83,14 +83,14 @@ def _handshake(port, token, key=RFC_KEY):
     s = socket.create_connection(("127.0.0.1", port), timeout=3)
     lines = [
         "GET / HTTP/1.1",
-        "Host: 127.0.0.1:{}".format(port),
+        f"Host: 127.0.0.1:{port}",
         "Upgrade: websocket",
         "Connection: Upgrade",
-        "Sec-WebSocket-Key: {}".format(key),
+        f"Sec-WebSocket-Key: {key}",
         "Sec-WebSocket-Version: 13",
     ]
     if token is not None:
-        lines.append("x-claude-code-ide-authorization: {}".format(token))
+        lines.append(f"x-claude-code-ide-authorization: {token}")
     s.sendall(("\r\n".join(lines) + "\r\n\r\n").encode())
     resp = b""
     deadline = time.time() + 3

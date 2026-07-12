@@ -23,7 +23,7 @@ def path_to_uri(path: str) -> str:
 def uri_to_path(uri: str) -> str:
     parsed = urlparse(uri)
     if parsed.scheme != "file":
-        raise ValueError("not a file URI: {}".format(uri))
+        raise ValueError(f"not a file URI: {uri}")
     p = unquote(parsed.path)
     m = _URI_WIN_DRIVE.match(p)
     if m:

@@ -18,12 +18,12 @@ class WSClient:
         self.frames = []
         lines = [
             "GET / HTTP/1.1",
-            "Host: 127.0.0.1:{}".format(port),
+            f"Host: 127.0.0.1:{port}",
             "Upgrade: websocket",
             "Connection: Upgrade",
-            "Sec-WebSocket-Key: {}".format(RFC_KEY),
+            f"Sec-WebSocket-Key: {RFC_KEY}",
             "Sec-WebSocket-Version: 13",
-            "x-claude-code-ide-authorization: {}".format(token),
+            f"x-claude-code-ide-authorization: {token}",
         ]
         self.sock.sendall(("\r\n".join(lines) + "\r\n\r\n").encode())
         resp = b""
@@ -37,7 +37,7 @@ class WSClient:
                 break
             resp += chunk
         if b"101" not in resp.split(b"\r\n", 1)[0]:
-            raise ConnectionError("handshake failed: {!r}".format(resp[:120]))
+            raise ConnectionError(f"handshake failed: {resp[:120]!r}")
 
     def send_json(self, obj):
         data = json.dumps(obj, ensure_ascii=False).encode("utf-8")

@@ -64,14 +64,14 @@ class Dispatcher:
         handler = self._handlers.get(method)
         if handler is None:
             if is_request:
-                return error_response(msg_id, METHOD_NOT_FOUND, "method not found: {}".format(method))
+                return error_response(msg_id, METHOD_NOT_FOUND, f"method not found: {method}")
             return None
 
         try:
             result = handler(message.get("params"), {"id": msg_id})
         except Exception as exc:  # noqa: BLE001 - protocol boundary
             if is_request:
-                return error_response(msg_id, INTERNAL_ERROR, "{}: {}".format(type(exc).__name__, exc))
+                return error_response(msg_id, INTERNAL_ERROR, f"{type(exc).__name__}: {exc}")
             return None
 
         if not is_request:

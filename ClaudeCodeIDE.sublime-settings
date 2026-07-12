@@ -1,0 +1,14 @@
+{
+	// Start the IDE server when Sublime starts.
+	"auto_start": true,
+
+	// Name shown in Claude Code's /ide picker and the lock file.
+	"ide_name": "Sublime Text",
+
+	// Debounce for selection_changed notifications (milliseconds).
+	"selection_debounce_ms": 200,
+
+	// Print protocol frames and lifecycle events to the Sublime console
+	// (View > Show Console). Useful while the protocol is being verified.
+	"debug": true
+}

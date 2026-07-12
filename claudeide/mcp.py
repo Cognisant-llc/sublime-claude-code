@@ -88,7 +88,7 @@ class MCPServer:
     # -- MCP methods --
 
     def _initialize(self, params: Any, ctx: Dict[str, Any]) -> Dict[str, Any]:
-        self._log("initialize from client: {}".format(json.dumps(params, ensure_ascii=False)))
+        self._log(f"initialize from client: {json.dumps(params, ensure_ascii=False)}")
         return {
             "protocolVersion": PROTOCOL_VERSION,
             "capabilities": {"tools": {"listChanged": True}},
@@ -103,7 +103,7 @@ class MCPServer:
         name = params.get("name")
         handler = self._handlers.get(name)
         if handler is None:
-            raise ValueError("unknown tool: {}".format(name))
+            raise ValueError(f"unknown tool: {name}")
         arguments = params.get("arguments") or {}
         try:
             result = handler(arguments, ctx)

@@ -62,21 +62,17 @@ def build_accept_response(key: str, subprotocol: Optional[str] = None) -> bytes:
         "HTTP/1.1 101 Switching Protocols",
         "Upgrade: websocket",
         "Connection: Upgrade",
-        "Sec-WebSocket-Accept: {}".format(compute_accept(key)),
+        f"Sec-WebSocket-Accept: {compute_accept(key)}",
     ]
     if subprotocol:
-        lines.append("Sec-WebSocket-Protocol: {}".format(subprotocol))
+        lines.append(f"Sec-WebSocket-Protocol: {subprotocol}")
     return ("\r\n".join(lines) + "\r\n\r\n").encode("ascii")
 
 
 def build_reject_response(status: int = 401, reason: str = "Unauthorized") -> bytes:
     body = reason.encode("ascii")
-    return (
-        "HTTP/1.1 {} {}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n".format(
-            status, reason, len(body)
-        ).encode("ascii")
-        + body
-    )
+    head = f"HTTP/1.1 {status} {reason}\r\nContent-Length: {len(body)}\r\nConnection: close\r\n\r\n"
+    return head.encode("ascii") + body
 
 
 def encode_frame(opcode: int, payload: bytes, mask: bool = False) -> bytes:
@@ -122,7 +118,7 @@ def decode_frames(buf: bytearray):
             ln = struct.unpack("!Q", bytes(buf[2:10]))[0]
             idx = 10
         if ln > _MAX_FRAME:
-            raise ValueError("frame too large: {}".format(ln))
+            raise ValueError(f"frame too large: {ln}")
         need = idx + (4 if masked else 0) + ln
         if len(buf) < need:
             return frames
@@ -186,13 +182,13 @@ class WSServer:
             self.port = port
             break
         if self._sock is None:
-            raise OSError("could not bind a port in {}-{}: {}".format(lo, hi, last_err))
+            raise OSError(f"could not bind a port in {lo}-{hi}: {last_err}")
 
         self._running = True
         t = threading.Thread(target=self._accept_loop, name="claudeide-accept", daemon=True)
         t.start()
         self._threads.append(t)
-        self._log("listening on 127.0.0.1:{}".format(self.port))
+        self._log(f"listening on 127.0.0.1:{self.port}")
         return self.port
 
     def stop(self) -> None:
@@ -224,7 +220,7 @@ class WSServer:
                 client.sendall(encode_frame(OP_TEXT, text.encode("utf-8")))
                 return True
             except OSError as exc:
-                self._log("send failed: {}".format(exc))
+                self._log(f"send failed: {exc}")
                 self._drop_client()
                 return False
 
@@ -238,7 +234,7 @@ class WSServer:
                 continue
             except OSError:
                 break
-            self._log("connection from {}".format(addr))
+            self._log(f"connection from {addr}")
             t = threading.Thread(
                 target=self._client_loop, args=(conn,), name="claudeide-client", daemon=True
             )
@@ -265,8 +261,7 @@ class WSServer:
         auth_ok = bool(supplied) and hmac.compare_digest(supplied, self._auth_token)
 
         if not (upgrade_ok and key and auth_ok):
-            self._log("handshake rejected (upgrade={}, key={}, auth={})".format(
-                upgrade_ok, bool(key), auth_ok))
+            self._log(f"handshake rejected (upgrade={upgrade_ok}, key={bool(key)}, auth={auth_ok})")
             try:
                 conn.sendall(build_reject_response())
             except OSError:
@@ -314,7 +309,7 @@ class WSServer:
             try:
                 frames = decode_frames(buf)
             except ValueError as exc:
-                self._log("protocol error: {}".format(exc))
+                self._log(f"protocol error: {exc}")
                 break
             closed = False
             for fin, opcode, payload in frames:
@@ -368,4 +363,4 @@ class WSServer:
         try:
             fn()
         except Exception as exc:  # noqa: BLE001 - callbacks must not kill IO threads
-            self._log("callback error: {}".format(exc))
+            self._log(f"callback error: {exc}")

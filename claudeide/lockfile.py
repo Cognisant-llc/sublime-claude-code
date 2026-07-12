@@ -20,7 +20,7 @@ def default_lock_dir() -> str:
 
 
 def lock_path(port: int, lock_dir: Optional[str] = None) -> str:
-    return os.path.join(lock_dir or default_lock_dir(), "{}.lock".format(port))
+    return os.path.join(lock_dir or default_lock_dir(), f"{port}.lock")
 
 
 def write_lock(

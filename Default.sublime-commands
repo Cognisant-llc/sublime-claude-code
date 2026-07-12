@@ -1,0 +1,22 @@
+[
+	{
+		"caption": "Claude Code IDE: Start Server",
+		"command": "claude_ide_start"
+	},
+	{
+		"caption": "Claude Code IDE: Stop Server",
+		"command": "claude_ide_stop"
+	},
+	{
+		"caption": "Claude Code IDE: Status",
+		"command": "claude_ide_status"
+	},
+	{
+		"caption": "Claude Code IDE: Copy Launch Command (env)",
+		"command": "claude_ide_copy_launch"
+	},
+	{
+		"caption": "Claude Code IDE: Send Selection as @-mention",
+		"command": "claude_ide_at_mention"
+	}
+]

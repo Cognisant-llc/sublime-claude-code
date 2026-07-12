@@ -538,21 +538,32 @@ def _select_when_loaded(view, start_text, end_text, to_eol, tries=100):
     attempt()
 
 
+def _guess_language(file_name):
+    ext = os.path.splitext(file_name)[1].lower().lstrip(".")
+    if ext in ("png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "tga"):
+        return "image"
+    return ext or "plaintext"
+
+
 def _tool_get_open_editors(args, ctx):
+    # Tabs are sheets, not views: image tabs have sheet.view() == None and
+    # would be invisible to a views()-based walk (found via live E2E).
     def op():
         tabs = []
         for window in sublime.windows():
-            active = window.active_view()
-            for view in window.views():
-                file_name = view.file_name()
+            active_sheet = window.active_sheet()
+            active_id = active_sheet.id() if active_sheet else -1
+            for sheet in window.sheets():
+                file_name = sheet.file_name()
                 if not file_name:
                     continue
+                view = sheet.view()
                 tabs.append({
                     "uri": path_to_uri(file_name),
-                    "isActive": view.id() == (active.id() if active else -1),
+                    "isActive": sheet.id() == active_id,
                     "label": os.path.basename(file_name),
-                    "languageId": _language_id(view),
-                    "isDirty": view.is_dirty(),
+                    "languageId": _language_id(view) if view else _guess_language(file_name),
+                    "isDirty": view.is_dirty() if view is not None else False,
                 })
         return {"tabs": tabs}
 

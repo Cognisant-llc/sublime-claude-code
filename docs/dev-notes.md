@@ -1,7 +1,6 @@
 # 開発ノート — プロトコル知見・E2E 発見・落とし穴
 
 > 最終更新: 2026-07-12 | 更新者: Claude session（初日実装）
-> 関連: [launch-plan.md](./launch-plan.md), 実装計画 `~/.claude/plans/swift-wishing-turtle.md`
 
 ## プロトコル（一次情報: coder/claudecode.nvim PROTOCOL.md）
 

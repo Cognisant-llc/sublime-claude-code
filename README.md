@@ -1,8 +1,12 @@
 # Claude Code IDE for Sublime Text
 
+**English** | [日本語](./README.ja.md)
+
 Native [Claude Code](https://claude.com/product/claude-code) IDE integration for Sublime Text 4 — in-editor diff review (accept/reject), live selection sharing, and `@`-mentions, speaking the same WebSocket/MCP protocol as the official VS Code and JetBrains extensions.
 
-**Status: work in progress** (M1: server + context sharing / M2: diff review UI / M3: polish). Not yet on Package Control.
+> **Unofficial community plugin** — not affiliated with or endorsed by Anthropic. "Claude" and "Claude Code" are trademarks of Anthropic, PBC.
+
+**Status: core features working** — server + context sharing (M1), in-editor diff review (M2), and parallel multi-session support are implemented and tested end-to-end. Polish phase (M3) in progress; not yet on Package Control.
 
 ## Motivation — why Sublime Text in the LLM era?
 

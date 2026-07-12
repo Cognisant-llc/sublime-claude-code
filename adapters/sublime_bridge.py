@@ -645,7 +645,7 @@ def _tool_open_diff(args, ctx, pending):
                                    contents, tab_name)
         except Exception as exc:  # noqa: BLE001 - never leave a pending orphan
             log(f"openDiff UI failed: {exc}")
-            _resolve_and_send(client_id, request_id, "DIFF_REJECTED")
+            _resolve_and_send(client_id, request_id, ["DIFF_REJECTED", tab_name])
 
     sublime.set_timeout(ui, 0)
     return DEFERRED

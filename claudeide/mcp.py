@@ -28,11 +28,22 @@ class ToolError(Exception):
 
 
 def wrap_content(result: Any) -> Dict[str, Any]:
+    """Wrap a tool result in MCP content blocks.
+
+    A plain string becomes one text block; a list/tuple of strings becomes
+    one block per string (openDiff resolutions are two blocks: outcome +
+    payload — the reference client requires both even though PROTOCOL.md
+    only documents the first). Anything else is JSON-dumped.
+    """
     if isinstance(result, str):
-        text = result
+        texts = [result]
+    elif isinstance(result, (list, tuple)) and result and all(
+        isinstance(item, str) for item in result
+    ):
+        texts = list(result)
     else:
-        text = json.dumps(result, ensure_ascii=False)
-    return {"content": [{"type": "text", "text": text}]}
+        texts = [json.dumps(result, ensure_ascii=False)]
+    return {"content": [{"type": "text", "text": t} for t in texts]}
 
 
 def tool_text_response(msg_id: Any, text: str) -> Dict[str, Any]:

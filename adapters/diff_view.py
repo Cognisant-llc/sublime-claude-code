@@ -147,7 +147,9 @@ def accept(tab_name):
         sublime.error_message(f"Claude diff: writing {rec['target']} failed:\n{exc}")
         return False
     rec["resolved"] = True
-    _resolve(rec["client_id"], rec["request_id"], "FILE_SAVED")
+    # Two content blocks (outcome + final contents): the client ignores a
+    # bare FILE_SAVED and would re-prompt/retry the edit without the body.
+    _resolve(rec["client_id"], rec["request_id"], ["FILE_SAVED", content])
     _teardown(tab_name)
     sublime.status_message(f"Claude diff accepted → {os.path.basename(rec['target'])}")
     return True
@@ -158,7 +160,7 @@ def reject(tab_name):
     if rec is None or rec["resolved"]:
         return False
     rec["resolved"] = True
-    _resolve(rec["client_id"], rec["request_id"], "DIFF_REJECTED")
+    _resolve(rec["client_id"], rec["request_id"], ["DIFF_REJECTED", tab_name])
     _teardown(tab_name)
     sublime.status_message("Claude diff rejected")
     return True
@@ -170,7 +172,7 @@ def handle_view_close(view):
     for tab_name, rec in list(_diffs.items()):
         if rec["right_id"] == vid and not rec["resolved"]:
             rec["resolved"] = True
-            _resolve(rec["client_id"], rec["request_id"], "DIFF_REJECTED")
+            _resolve(rec["client_id"], rec["request_id"], ["DIFF_REJECTED", tab_name])
             sublime.set_timeout(lambda t=tab_name: _teardown(t), 0)
             return
 

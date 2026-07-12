@@ -32,27 +32,42 @@ class PendingRequests:
                     return key
         return None
 
-    def resolve(self, client_id: Any, req_id: Any, text: str) -> Optional[Dict[str, Any]]:
+    def resolve(self, client_id: Any, req_id: Any, payload: Any) -> Optional[Dict[str, Any]]:
         """Remove the entry and build its response. None if absent, so
-        double-resolution is harmless."""
+        double-resolution is harmless. ``payload`` may be a string or a
+        list of strings (multi-block content, e.g. ["FILE_SAVED", body])."""
         key = (client_id, req_id)
         with self._lock:
             if key not in self._pending:
                 return None
             del self._pending[key]
-        return tool_text_response(req_id, text)
+        return tool_text_response(req_id, payload)
+
+    @staticmethod
+    def _outcome_with_meta(text: str, meta: Any) -> Any:
+        """Blanket resolutions only know the outcome word; the reference
+        client expects a second block naming the tab, which lives in meta."""
+        if isinstance(meta, dict) and meta.get("tab_name"):
+            return [text, meta["tab_name"]]
+        return text
 
     def resolve_all_for(self, client_id: Any, text: str) -> List[Dict[str, Any]]:
         """Resolve everything belonging to one client (its disconnect)."""
         with self._lock:
-            keys = [k for k in self._pending if k[0] == client_id]
-            for k in keys:
+            items = [(k, self._pending[k]) for k in self._pending if k[0] == client_id]
+            for k, _meta in items:
                 del self._pending[k]
-        return [tool_text_response(req_id, text) for _cid, req_id in keys]
+        return [
+            tool_text_response(req_id, self._outcome_with_meta(text, meta))
+            for (_cid, req_id), meta in items
+        ]
 
     def resolve_all(self, text: str) -> List[Tuple[Any, Dict[str, Any]]]:
         """Resolve everything; returns (client_id, response) pairs."""
         with self._lock:
-            keys = list(self._pending.keys())
+            items = list(self._pending.items())
             self._pending.clear()
-        return [(cid, tool_text_response(req_id, text)) for cid, req_id in keys]
+        return [
+            (cid, tool_text_response(req_id, self._outcome_with_meta(text, meta)))
+            for (cid, req_id), meta in items
+        ]

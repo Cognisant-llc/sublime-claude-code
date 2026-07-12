@@ -46,3 +46,27 @@ def test_resolve_all_returns_client_routing():
     pairs = p.resolve_all("DIFF_REJECTED")
     assert {(cid, resp["id"]) for cid, resp in pairs} == {(1, "a"), (2, "b")}
     assert p.resolve_all("X") == []
+
+
+def test_resolve_list_payload_builds_two_content_blocks():
+    """openDiff resolutions carry outcome + payload — the reference client
+    (Claude Code CLI) requires both blocks; a bare FILE_SAVED is ignored."""
+    p = PendingRequests()
+    p.add(1, "id-1", {"tab_name": "diff1"})
+    resp = p.resolve(1, "id-1", ["FILE_SAVED", "final file body\n"])
+    blocks = resp["result"]["content"]
+    assert [b["text"] for b in blocks] == ["FILE_SAVED", "final file body\n"]
+    assert all(b["type"] == "text" for b in blocks)
+
+
+def test_blanket_resolves_append_tab_name_from_meta():
+    p = PendingRequests()
+    p.add(1, "a", {"tab_name": "tab-A"})
+    p.add(1, "b", None)  # no meta -> single block
+    by_id = {r["id"]: r["result"]["content"] for r in p.resolve_all_for(1, "DIFF_REJECTED")}
+    assert [b["text"] for b in by_id["a"]] == ["DIFF_REJECTED", "tab-A"]
+    assert [b["text"] for b in by_id["b"]] == ["DIFF_REJECTED"]
+
+    p.add(2, "c", {"tab_name": "tab-C"})
+    pairs = p.resolve_all("DIFF_REJECTED")
+    assert [b["text"] for b in pairs[0][1]["result"]["content"]] == ["DIFF_REJECTED", "tab-C"]

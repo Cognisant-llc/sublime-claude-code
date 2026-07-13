@@ -8,7 +8,7 @@
 
 ![Claude Code が Sublime Text 内で編集を提案する様子: ターミナルで claude が動き、side-by-side diff がエディタに開き、Accept でファイルに反映される](docs/demo.gif)
 
-**ステータス: コア機能は動作します** — サーバー＋コンテキスト共有（M1）、エディタ内 diff レビュー（M2）、複数セッション並列接続まで実装・E2E 検証済み。磨き込みフェーズ（M3）進行中。Package Control 未登録。
+**ステータス: コア機能は動作します** — サーバー＋コンテキスト共有（M1）、エディタ内 diff レビュー（M2）、複数セッション並列接続まで、実際の Claude Code クライアントに対して E2E 検証済み。Package Control は申請中（下記の手動インストールは今すぐ使えます）。
 
 ## なぜ今 Sublime Text か
 
@@ -31,9 +31,9 @@ Claude Code が接続すると（`/ide` または自動接続）:
 ## インストール（開発中につき手動）
 
 1. このリポジトリを任意の場所に clone
-2. Sublime の `Packages` に `ClaudeCodeIDE` という名前でリンク（名前重要 — Python パッケージ名になります）:
-   - **Windows**: `mklink /J "%APPDATA%\Sublime Text\Packages\ClaudeCodeIDE" "C:\path\to\repo"`
-   - **macOS/Linux**: `ln -s /path/to/repo "~/Library/Application Support/Sublime Text/Packages/ClaudeCodeIDE"`
+2. Sublime の `Packages` に `Claude Code IDE` という名前でリンク（import は相対なのでどんな名前でも動きますが、Package Control インストールと同名にすると Preferences メニューのリンクが正しく解決します）:
+   - **Windows**: `mklink /J "%APPDATA%\Sublime Text\Packages\Claude Code IDE" "C:\path\to\repo"`
+   - **macOS/Linux**: `ln -s /path/to/repo "~/Library/Application Support/Sublime Text/Packages/Claude Code IDE"`
 3. Sublime Text を再起動。ステータスバーに `Claude ○ :<port>` が出れば待受中
 4. 任意のターミナルで `claude` を起動し、`/ide` で **Sublime Text** を選択
 
@@ -74,7 +74,7 @@ Claude Code の IDE 統合プロトコル（WebSocket + [MCP](https://modelconte
 
 ### Claude がファイルを編集すると何が起きますか？
 
-編集提案が Sublime 内に side-by-side diff タブとして開きます。Accept（`ctrl+alt+enter`）、Reject（`ctrl+alt+backspace`）、または提案を手直ししてから Accept。あなたが判断するまで Claude は待機し、レビューなしにディスクへ書き込まれることはありません。
+編集提案が Sublime 内に side-by-side diff タブとして開きます。提案ペインの ✓/✗ ボタン（コマンドパレットからも可。キーバインドはコメントアウトされた提案として同梱）で Accept / Reject、または提案を手直ししてから Accept。あなたが判断するまで Claude は待機し、既定の権限設定ではレビューなしにディスクへ書き込まれることはありません。
 
 ### コードはどこかに送信されますか？
 

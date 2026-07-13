@@ -8,7 +8,7 @@ Native [Claude Code](https://claude.com/product/claude-code) IDE integration for
 
 ![Claude Code proposing an edit in Sublime Text: the terminal runs claude, a side-by-side diff opens in the editor, and Accept writes the file](docs/demo.gif)
 
-**Status: core features working** — server + context sharing (M1), in-editor diff review (M2), and parallel multi-session support are implemented and tested end-to-end. Polish phase (M3) in progress; not yet on Package Control.
+**Status: core features working** — server + context sharing (M1), in-editor diff review (M2), and parallel multi-session support are implemented and tested end-to-end against the real Claude Code client. Package Control submission in progress; manual install below works today.
 
 ## Motivation — why Sublime Text in the LLM era?
 
@@ -31,9 +31,9 @@ When Claude Code connects (via `/ide` or auto-connect), the plugin provides:
 ## Install (manual, while in development)
 
 1. Clone this repo anywhere.
-2. Link it into Sublime's `Packages` as `ClaudeCodeIDE` (any folder name works — imports are relative — but this name keeps settings-file lookup consistent):
-   - **Windows**: `mklink /J "%APPDATA%\Sublime Text\Packages\ClaudeCodeIDE" "C:\path\to\repo"`
-   - **macOS/Linux**: `ln -s /path/to/repo "~/Library/Application Support/Sublime Text/Packages/ClaudeCodeIDE"`
+2. Link it into Sublime's `Packages` as `Claude Code IDE` (any folder name works — imports are relative — but this one matches Package Control installs, so the Preferences menu entries resolve):
+   - **Windows**: `mklink /J "%APPDATA%\Sublime Text\Packages\Claude Code IDE" "C:\path\to\repo"`
+   - **macOS/Linux**: `ln -s /path/to/repo "~/Library/Application Support/Sublime Text/Packages/Claude Code IDE"`
 3. Restart Sublime Text. The status bar shows `Claude ○ :<port>` when the server is listening.
 4. In any terminal, run `claude`, then `/ide` and pick **Sublime Text**.
 
@@ -74,7 +74,7 @@ Two ways:
 
 ### What happens when Claude edits a file?
 
-The proposed change opens as a side-by-side diff tab in Sublime. Accept it (`ctrl+alt+enter`), reject it (`ctrl+alt+backspace`), or edit the proposal by hand before accepting. Claude blocks until you decide — nothing touches disk without your review.
+The proposed change opens as a side-by-side diff tab in Sublime. Accept or reject it with the ✓/✗ buttons in the proposal pane (also in the command palette; suggested key bindings ship commented out in the keymap), or edit the proposal by hand before accepting. Claude blocks until you decide — with default permission settings, nothing touches disk without your review.
 
 ### Does my code get sent anywhere?
 

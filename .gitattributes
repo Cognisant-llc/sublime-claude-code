@@ -3,3 +3,13 @@
 *.md text eol=lf
 *.toml text eol=lf
 *.json text eol=lf
+
+# Keep the installed package lean: everything below is for development or
+# the GitHub page only (Package Control downloads honor export-ignore).
+docs export-ignore
+tests export-ignore
+scripts export-ignore
+uv.lock export-ignore
+pyproject.toml export-ignore
+.gitignore export-ignore
+.gitattributes export-ignore

@@ -34,5 +34,21 @@
 	{
 		"caption": "Claude Code IDE: Dev — Dump State to JSON",
 		"command": "claude_ide_dump_state"
+	},
+	{
+		"caption": "Preferences: Claude Code IDE Settings",
+		"command": "edit_settings",
+		"args": {
+			"base_file": "${packages}/Claude Code IDE/ClaudeCodeIDE.sublime-settings",
+			"default": "// Settings in here override those in \"Claude Code IDE/ClaudeCodeIDE.sublime-settings\"\n{\n\t$0\n}\n"
+		}
+	},
+	{
+		"caption": "Preferences: Claude Code IDE Key Bindings",
+		"command": "edit_settings",
+		"args": {
+			"base_file": "${packages}/Claude Code IDE/Default.sublime-keymap",
+			"default": "[\n\t$0\n]\n"
+		}
 	}
 ]

@@ -1,0 +1,33 @@
+[
+	{
+		"id": "preferences",
+		"children": [
+			{
+				"id": "package-settings",
+				"children": [
+					{
+						"caption": "Claude Code IDE",
+						"children": [
+							{
+								"caption": "Settings",
+								"command": "edit_settings",
+								"args": {
+									"base_file": "${packages}/Claude Code IDE/ClaudeCodeIDE.sublime-settings",
+									"default": "// Settings in here override those in \"Claude Code IDE/ClaudeCodeIDE.sublime-settings\"\n{\n\t$0\n}\n"
+								}
+							},
+							{
+								"caption": "Key Bindings",
+								"command": "edit_settings",
+								"args": {
+									"base_file": "${packages}/Claude Code IDE/Default.sublime-keymap",
+									"default": "[\n\t$0\n]\n"
+								}
+							}
+						]
+					}
+				]
+			}
+		]
+	}
+]

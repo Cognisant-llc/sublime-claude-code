@@ -18,6 +18,8 @@ Now that an agent writes much of the code, what should an editor be? Our answer:
 - **Trivially extensible by you.** In an LLM-first workflow, the editor is personal infrastructure: when Claude can write a Sublime plugin in minutes, a scriptable Python API beats a marketplace of prebuilt features. You compose exactly the cockpit you want — this plugin itself is proof.
 - **No bundled AI, by choice.** AI-native IDEs (Cursor, Windsurf, …) and VS Code couple the agent to the editor — with their own subscription, model markup, and upgrade cadence. Claude Code is editor-agnostic; the missing piece was only the thin protocol layer that lets Sublime *talk* to it. This plugin adds that layer, so the editor stays fast and yours, and the agent stays first-class.
 
+The longer argument — why coupling, not the editor, is the thing to choose: **[Don't Switch Your Editor — Connect the Agent](docs/dont-switch-your-editor.md)**
+
 ## What it does
 
 When Claude Code connects (via `/ide` or auto-connect), the plugin provides:

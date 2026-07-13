@@ -18,6 +18,8 @@
 - **自分で拡張できる。** Claude が Sublime プラグインを数分で書ける今、スクリプタブルな Python API は既製機能のマーケットプレイスに勝る。このプラグイン自体がその証明
 - **AI を同梱しない、という選択。** AI ネイティブ IDE はエージェントとエディタを密結合にする。Claude Code はエディタ非依存 — 足りなかったのは Sublime と「会話する」薄いプロトコル層だけ
 
+この思想の詳しい構造論: **[エディタを替えるな、エージェントを繋げ（日本語・Cognisant Insights）](https://cognisant.io/insights/editor-agent-decoupling)** ／ EN: [Don't Switch Your Editor — Connect the Agent](docs/dont-switch-your-editor.md)
+
 ## できること
 
 Claude Code が接続すると（`/ide` または自動接続）:

@@ -63,12 +63,23 @@ class ClaudeIdeDumpStateCommand(sublime_plugin.ApplicationCommand):
                                 "diff_tab": diff_tab,
                             }
                         )
+            transients = []
+            for window in sublime.windows():
+                if not hasattr(window, "transient_view_in_group"):
+                    break
+                for group in range(window.num_groups()):
+                    view = window.transient_view_in_group(group)
+                    if view is not None and view.file_name():
+                        transients.append(
+                            {"file": os.path.basename(view.file_name()), "group": group}
+                        )
             state = {
                 "running": bridge.is_running(),
                 "port": bridge.server_port(),
                 "clients": bridge.client_count(),
                 "num_groups": sublime.active_window().num_groups(),
                 "sheets": sheets,
+                "transients": transients,  # preview tabs are invisible to sheets()
             }
         except Exception as exc:  # noqa: BLE001 - always produce a file
             state = {"error": str(exc)}
@@ -76,4 +87,4 @@ class ClaudeIdeDumpStateCommand(sublime_plugin.ApplicationCommand):
             json.dump(state, fh, ensure_ascii=False)
         # Console-only trace: a status_message here would spam the status bar
         # when smoke/dev scripts poll this command.
-        print("[{}] state dumped to {}".format(_PKG, out))
+        print(f"[{_PKG}] state dumped to {out}")

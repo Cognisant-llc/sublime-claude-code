@@ -21,7 +21,7 @@ from ..claudeide.session import PendingRequests
 from ..claudeide.wsserver import WSServer
 from . import diff_view
 
-SETTINGS_FILE = "ClaudeCodeIDE.sublime-settings"
+SETTINGS_FILE = "Claude Code IDE.sublime-settings"
 STATUS_KEY = "zz_claude_ide"
 PLUGIN_VERSION = "0.1.1"
 

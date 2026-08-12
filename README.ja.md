@@ -28,6 +28,7 @@ Claude Code が接続すると（`/ide` または自動接続）:
 - **コンテキスト共有** — 現在の選択範囲、開いているタブ、ワークスペースフォルダ、未保存状態
 - **`selection_changed` ストリーミング** — 今見ている場所を Claude が常に把握
 - **`@`-mention** — 選択範囲をプロンプトへ送る
+- **表示用 CLI** — `scripts/open_file.py <path>` でターミナルやエージェント自身からファイルをサイドペインに表示 —「Claude、成果物を見せて」のためのチャネル（FAQ 参照）
 - **lock ファイル探索** — Sublime 内の Terminus からでも外部ターミナルからでも接続可能
 
 ## インストール（開発中につき手動）
@@ -76,7 +77,20 @@ Claude Code の IDE 統合プロトコル（WebSocket + [MCP](https://modelconte
 
 ### Claude がファイルを編集すると何が起きますか？
 
-編集提案が Sublime 内に side-by-side diff タブとして開きます。提案ペインの ✓/✗ ボタン（コマンドパレットからも可。キーバインドはコメントアウトされた提案として同梱）で Accept / Reject、または提案を手直ししてから Accept。あなたが判断するまで Claude は待機し、既定の権限設定ではレビューなしにディスクへ書き込まれることはありません。
+編集提案が Sublime 内に side-by-side diff タブとして開きます。提案ペインの ✓/✗ ボタン（コマンドパレットからも可。キーバインドは `Example.sublime-keymap` にコピペ用の見本を同梱）で Accept / Reject、または提案を手直ししてから Accept。あなたが判断するまで Claude は待機し、既定の権限設定ではレビューなしにディスクへ書き込まれることはありません。
+
+### Claude に成果物ファイルを開いて見せてもらえますか？
+
+MCP 経由では不可能です — Claude Code がモデルに公開する ide サーバーのツールは `getDiagnostics`/`executeCode` の2つだけで、接続中でもモデルは `openFile` を呼べません。同梱の CLI がそのためのチャネルです。Claude Code と同じ lock 探索＋認証付き WebSocket 接続でプラグインの `openFile` を直接呼ぶため、サイドグループ配置や `--preview`（transient タブ・フォーカスを奪わない）もそのまま効きます。`/ide` を実行していないセッションからでも、任意のターミナルから使えます:
+
+```bash
+python scripts/open_file.py path/to/report.html            # 表示してフォーカス
+python scripts/open_file.py path/to/notes.md --preview     # ちら見せ・フォーカス奪わず
+```
+
+あとはエージェントに教えるだけです（例: CLAUDE.md に「見せるべき成果物は `scripts/open_file.py` で開く」）— 成果物が作られるそばから Sublime に現れるようになります。
+
+この CLI はリポジトリ側にあります（`scripts/` はインストールパッケージに含まれません）。clone した checkout から実行してください — 上記の手動インストール構成ならそのまま使えます。
 
 ### コードはどこかに送信されますか？
 

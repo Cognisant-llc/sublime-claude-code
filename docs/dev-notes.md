@@ -34,6 +34,21 @@
 12. claude の初回オンボーディング（フォルダ信頼「Security guide」・「use my browser」）は**フォルダ/状態ごとに TUI をブロック**する
     → デモ撮影前にウォームアップ起動で消化しておく。なお lock の workspaceFolders はウィンドウ/フォルダ変化で自動更新される（実測）
 
+## モデル側ツール公開の実測と scripts/open_file.py（2026-08-12）
+
+13. **モデル（Claude）から呼べる ide ツールは getDiagnostics / executeCode の2つだけ**（実セッションの
+    ToolSearch 全列挙で確認）。openFile / openDiff / getOpenEditors 等は CLI（harness）内部専用で、
+    モデルのツール一覧に出ない。**プラグインがいくら openFile を advertise しても「Claude が自発的に
+    成果物を開いて見せる」は MCP 経由では実現不可能** → `scripts/open_file.py` を追加
+    （lock 探索＋認証 WS＋`tools/call openFile` を直接叩く CLI。`/ide` 未接続のセッションからも可）
+14. 実装で `subl --command` 案は不採用: #4 の terminus_open 前例（外部 subl から実行されない）＋
+    #6 の日本語引数 CP932 化けリスク。WS/UTF-8 経由は日本語ファイル名・パスで無事を実測。
+    受信側は `selection_changed` ブロードキャストが割り込むため、応答は id 一致までスキップして待つ
+    （`wait_response`。smoke の「次フレーム=応答」前提は同時使用ユーザーの実環境では成り立たない）
+15. **transient（preview）タブは `window.sheets()` に載らない** → dump_state に `transients` キーを追加
+    （`transient_view_in_group` 走査）。transient はユーザーが入力すると通常タブへ昇格して sheets() に
+    現れる（実測）。makeFrontmost:false 応答の languageId はロード完了前だと "plaintext"（cosmetic）
+
 ## 未検証（Open Questions）
 
 - openDiff FILE_SAVED 後、Claude はディスク再読込するか（応答2要素目に全文を返すので実質解消。厳密な再読込タイミングは未計測）
@@ -53,4 +68,5 @@
 - junction: `%APPDATA%\Sublime Text\Packages\ClaudeCodeIDE` → 本リポ
 - **一発検証**: `uv run python scripts/dev_check.py`（pytest → `claude_ide_dev_reload` → 状態 dump → smoke）。unit のみは `--no-live`
 - 個別: `subl --command claude_ide_dev_reload`（submodule 込み reload）／`subl --command claude_ide_dump_state` → `%TEMP%\claude_ide_state.json`／`scripts/smoke_multi.py`・`smoke_diff.py`（対話）
+- `scripts/open_file.py <path> [--preview|--no-focus|--start-text …]`: 稼働中 Sublime にファイルを表示（エージェントの成果物提示チャネル。unit: `tests/test_open_file_script.py`・reload 不要＝既存接続を切らない）
 - dev コマンド2枚はパッケージ同梱（`dev_commands.py`）。旧 User/_claude_ide_*_tmp.py は削除済み（2026-07-12）

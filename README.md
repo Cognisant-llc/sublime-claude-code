@@ -28,6 +28,7 @@ When Claude Code connects (via `/ide` or auto-connect), the plugin provides:
 - **Context sharing** — current selection, open tabs, workspace folders, dirty state
 - **`selection_changed` streaming** — Claude always knows what you're looking at
 - **`@`-mention** — send the current selection range to the prompt
+- **Show-me CLI** — `scripts/open_file.py <path>` surfaces any file in the side pane, from a terminal or from the agent itself — the channel for "Claude, show me what you made" (see FAQ)
 - Lock-file discovery — works from Terminus inside Sublime *or* any external terminal
 
 ## Install (manual, while in development)
@@ -76,7 +77,20 @@ Two ways:
 
 ### What happens when Claude edits a file?
 
-The proposed change opens as a side-by-side diff tab in Sublime. Accept or reject it with the ✓/✗ buttons in the proposal pane (also in the command palette; suggested key bindings ship commented out in the keymap), or edit the proposal by hand before accepting. Claude blocks until you decide — with default permission settings, nothing touches disk without your review.
+The proposed change opens as a side-by-side diff tab in Sublime. Accept or reject it with the ✓/✗ buttons in the proposal pane (also in the command palette; ready-to-copy key bindings ship in `Example.sublime-keymap`), or edit the proposal by hand before accepting. Claude blocks until you decide — with default permission settings, nothing touches disk without your review.
+
+### Can Claude open files to show me its results?
+
+Not via MCP — Claude Code exposes only `getDiagnostics`/`executeCode` from the ide server to the model, so the model can never call `openFile` itself, even while connected. The bundled CLI is the supported channel: it performs the same lock discovery + authenticated WebSocket handshake as Claude Code and calls the plugin's `openFile` directly — side-group placement and `--preview` (transient tab, no focus steal) included. It works from any terminal, even for sessions that never ran `/ide`:
+
+```bash
+python scripts/open_file.py path/to/report.html            # show + focus
+python scripts/open_file.py path/to/notes.md --preview     # glance, no focus steal
+```
+
+Then teach your agent (e.g. in `CLAUDE.md`): "when you produce a file I should look at, run `scripts/open_file.py <path>`" — deliverables start appearing in Sublime as they are made.
+
+The CLI lives in the repository (`scripts/` is excluded from the installed package), so run it from a cloned checkout — the manual-install setup above already has one.
 
 ### Does my code get sent anywhere?
 

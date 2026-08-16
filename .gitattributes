@@ -13,3 +13,4 @@ uv.lock export-ignore
 pyproject.toml export-ignore
 .gitignore export-ignore
 .gitattributes export-ignore
+.python-version export-ignore

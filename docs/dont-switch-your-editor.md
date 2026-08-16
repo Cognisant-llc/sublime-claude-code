@@ -86,4 +86,4 @@ Our answer for the AI era isn't "move editors every year". It's: **let the agent
 
 *日本語版（より詳しい構造論）: [エディタを替えるな、エージェントを繋げ — Cognisant Insights](https://cognisant.io/insights/editor-agent-decoupling)*
 
-*Written by [Daichi Kudo](https://github.com/Daichi-Kudo) (Cognisant LLC), with AI assistance; facts checked against the linked sources, measurements taken on the author's machine, 2026-07.*
+*Written by [Daichi Kudo](https://github.com/Daichi-Kudo) ([Cognisant LLC](https://cognisant.io)), with AI assistance; facts checked against the linked sources, measurements taken on the author's machine, 2026-07.*

@@ -108,6 +108,10 @@ The protocol core is dependency-free Python 3.8 (the Sublime Text 4 plugin host)
 
 Because the agent doesn't need to live inside the editor. Claude Code runs in a terminal; the editor's job is reading, judging, and occasionally hand-editing what the agent proposes — a job Sublime does instantly and in ~100–300 MB of RAM. Decoupling means you upgrade the agent and the editor independently, with no bundled subscription or lock-in. See [Motivation](#motivation--why-sublime-text-in-the-llm-era).
 
+## About
+
+Developed and maintained by [Cognisant LLC](https://cognisant.io) — we help teams connect AI agents to the tools they already use. More writing at [Cognisant Insights](https://cognisant.io/insights), including the Japanese companion to the motivation essay: [エディタを替えるな、エージェントを繋げ](https://cognisant.io/insights/editor-agent-decoupling).
+
 ## License
 
 MIT

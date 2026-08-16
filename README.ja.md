@@ -108,6 +108,10 @@ python scripts/open_file.py path/to/notes.md --preview     # ちら見せ・フ�
 
 エージェントはエディタの中に住む必要がないからです。Claude Code はターミナルで動き、エディタの仕事は「エージェントの提案を読み、判断し、時々手直しする」こと — Sublime が一瞬で、RAM 100–300 MB でこなす仕事です。疎結合ならエージェントとエディタを独立に更新でき、抱き合わせのサブスクもロックインもありません。
 
+## 開発元
+
+[Cognisant合同会社](https://cognisant.io)（Cognisant LLC）が開発・保守しています — AI エージェントを、チームがいま使っているツールへ接続する取り組みの一環です。関連する考察: [Cognisant Insights](https://cognisant.io/insights)
+
 ## ライセンス
 
 MIT

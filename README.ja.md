@@ -2,13 +2,13 @@
 
 [English](./README.md) | **日本語**
 
-**Claude Code を 6 セッション並列で走らせても、「どこで何が変わったか」を見失わない。** [Claude Code](https://claude.com/product/claude-code) を Sublime Text 4 にネイティブ統合するプラグインです。**Recent Activity** ペインが各セッションの触ったファイルを PJ → セッション → ファイルの順に一覧し、ワンクリックで開けます。加えて、エディタ内 diff レビュー（Accept/Reject）、選択範囲のリアルタイム共有、`@`-mention に対応。公式の VS Code / JetBrains 拡張と同じ WebSocket/MCP プロトコルを実装しています。
+**Claude Code を 6 セッション並列で走らせても、「どこで何が変わったか」を見失わない。** [Claude Code](https://claude.com/product/claude-code) を Sublime Text 4 にネイティブ統合するプラグインです。**Recent Activity** ペインが各セッションの触ったファイルをプロジェクト → セッション → ファイルの順に一覧し、ワンクリックで開けます。加えて、エディタ内 diff レビュー（Accept/Reject）、選択範囲のリアルタイム共有、`@`-mention に対応。公式の VS Code / JetBrains 拡張と同じ WebSocket/MCP プロトコルを実装しています。
 
 > **非公式のコミュニティプラグインです** — Anthropic とは無関係であり、承認を受けたものではありません。「Claude」および「Claude Code」は Anthropic, PBC の商標です。
 
-![6 つの Claude Code セッションが 6 つの PJ で文書を書き、Sublime Text の Recent Activity ペインに PJ・セッション別にファイルが並んでいき、クリックで開く様子](docs/demo.gif)
+![6 つの Claude Code セッションが 6 つのプロジェクトで文書を書き、Sublime Text の Recent Activity ペインにプロジェクト・セッション別にファイルが並んでいき、クリックで開く様子](docs/demo.gif)
 
-**ステータス: コア機能は動作します** — サーバー＋コンテキスト共有（M1）、エディタ内 diff レビュー（M2）、複数セッション並列接続、Recent Activity ペイン（0.3）まで、実際の Claude Code クライアントに対して E2E 検証済み。Package Control は申請中（下記の手動インストールは今すぐ使えます）。
+**ステータス: 0.3.x・全機能が動作します** — コンテキスト共有付きの IDE サーバー、エディタ内 diff レビュー、複数セッション並列接続、Recent Activity ペインまで、実際の Claude Code クライアントに対して E2E 検証済み（[リリース一覧](https://github.com/Cognisant-llc/sublime-claude-code/releases)）。Package Control への掲載は申請中で、下記の手動インストールは今すぐ使えます。
 
 ## なぜ今 Sublime Text か
 
@@ -33,11 +33,11 @@ Claude Code が接続すると（`/ide` または自動接続）:
 
 ## Recent Activity パネル
 
-複数の Claude セッションを PJ 横断で並列に走らせると、「今どこで何が変わったか・どのセッションがやったか」が分からなくなります。このパネルはそれを一目で示します。直近に変更されたファイルを **PJ → セッション → ファイル** の 3 階層・新しい順で、サイドバー隣のペインに常駐表示し、クリック（または Enter）1 回で開きます（テキスト・画像は Sublime、PDF / Office / 動画は OS 既定アプリ）。
+複数の Claude セッションをプロジェクト横断で並列に走らせると、「今どこで何が変わったか・どのセッションがやったか」が分からなくなります。このパネルはそれを一目で示します。直近に変更されたファイルを **プロジェクト → セッション → ファイル** の 3 階層・新しい順で、各ウィンドウのサイドバー隣に自動で開くペインに常駐表示し、クリック 1 回で開きます（テキスト・画像は Sublime、PDF / Office / 動画は OS 既定アプリ）。
 
-既定では文書・メディアのみ（md, txt, html, pdf, xlsx/docx/pptx, csv, 画像, 動画, 音声）。`c` でコードも含めます。前回パネルを見てから変わったファイルには `*`、セッションの稼働状態は `●`（busy）/`○`（idle）、worktree は親リポジトリに畳んで表示します。
+既定では文書・メディアのみ（md, txt, html, pdf, xlsx/docx/pptx, csv, 画像, 動画, 音声）。コードの表示はパネルごとに切り替えられます。前回パネルを見てから変わったファイルには `*`、セッションの稼働状態は `●`（busy）/`○`（idle）、同じファイルへの連続更新は `×N` にまとめて表示します。
 
-**PJ 単位は「`claude` を開いたディレクトリ」**（そのセッションの作業ディレクトリ）です。ツール呼び出しがサブディレクトリへ `cd` しても PJ は分裂せず、各セッションは開いた 1 つのディレクトリに束ねられます。不要な PJ はその行で `h` を押すと隠せます（永続・`Shift+H` で復元）。常に隠したいディレクトリは `activity_panel.hide_projects` に basename（例 `"demo"`）かフルパスで指定します。
+**プロジェクトの単位は「`claude` を開いたディレクトリ」**（そのセッションの作業ディレクトリ）です。ツール呼び出しがサブディレクトリへ `cd` してもプロジェクトは分裂せず、git worktree は親リポジトリに畳んで表示します。不要なプロジェクトはパネルから隠せます（隠したプロジェクトを復元するまで永続）。常に隠したいディレクトリは `activity_panel.hide_projects` に basename（例 `"demo"`）かフルパスで指定します。
 
 - **何が変わったか**: 稼働中セッションの作業ディレクトリをファイルシステム監視（Windows `ReadDirectoryChangesW`、`node_modules` 等は除外）。シェルコマンドやスクリプト、手編集による変更も拾います
 - **誰が変えたか**: Claude Code の hook が Edit/Write のパスと Bash の実行区間をセッション別に記録。`~/.claude/settings.json` に一度だけ登録します（macOS/Linux は `py -3` を `python3` に）:
@@ -51,16 +51,20 @@ Claude Code が接続すると（`/ide` または自動接続）:
 }
 ```
 
-パネル内の操作: クリック / `Enter` で開く（PJ 行は折り畳み）、`r` 再読込、`c` コード表示切替、`h` カーソル下の PJ を隠す、`Shift+H` で隠した PJ を全復元、`1`〜`5` で期間（1h / 6h / 24h / 3d / 7d）。コマンドパレット: *Recent Activity — Open Panel* / *Quick List*（画面を使いたくない時のあいまい検索一覧）/ *Hide・Show Hidden Projects*。設定は `activity_panel` ブロック（グループ・最小幅・期間・`hide_projects`・除外一覧）、ログは `~/.claude/logs/file-activity*.jsonl`（7 日保持）。ファイル監視は現状 Windows のみ（他 OS では hook 記録のみ表示）。
+**操作**: シングルクリックでポインタ下のファイルを開きます（プロジェクト行は折り畳み）。このマウス操作は同梱設定で最初から有効です。すべての操作はコマンドパレットの *Claude Code IDE: Recent Activity — …* にあります: Open Panel / Quick List（画面を使いたくない時のあいまい検索一覧）/ Refresh / Toggle Code Files / Hide Project Under Caret / Show Hidden Projects / Edit Always-Hidden List / Window 1h・6h・24h・3 days・7 days。パネル内のショートカット（`Enter` 開く、`r` 再読込、`c` コード表示切替、`h` カーソル下のプロジェクトを隠す、`Shift+H` 隠したプロジェクトを全復元、`1`〜`5` 期間）と、どこからでもパネルを開く `Ctrl+Alt+A` は「提案」であり既定では無効です。`Example.sublime-keymap` からユーザーキーマップ（Preferences › Package Settings › Claude Code IDE › Key Bindings）へコピーして有効化してください（Package Control の方針: パッケージはキーを提案するだけで占有しない）。
 
-## インストール（開発中につき手動）
+**設定**は `activity_panel` ブロック: `auto_open`、`group` と `min_width_chars`（ペインの位置と幅）、`window_hours`、`show_code`、`scope`（`"all"` = 稼働中セッション全部のプロジェクト／`"window"` = このウィンドウのフォルダ配下のみ）、`hide_projects`、`prune`（一覧にも監視にも含めないディレクトリ名）、`keep_days`。ログは `~/.claude/logs/file-activity*.jsonl` の 2 本で、30 分ごとに圧縮し、年齢（`keep_days`・既定 7 日）と件数の両方で上限を掛けます。ファイル監視側のログには文書・メディアの記録だけを残します。ファイル監視は現状 Windows のみ（他 OS では hook 記録のみ表示）。
+
+## インストール（手動 — Package Control 掲載は申請中）
 
 1. このリポジトリを任意の場所に clone
 2. Sublime の `Packages` に `Claude Code IDE` という名前でリンク（import は相対なのでどんな名前でも動きますが、Package Control インストールと同名にすると Preferences メニューのリンクが正しく解決します）:
    - **Windows**: `mklink /J "%APPDATA%\Sublime Text\Packages\Claude Code IDE" "C:\path\to\repo"`
-   - **macOS/Linux**: `ln -s /path/to/repo "~/Library/Application Support/Sublime Text/Packages/Claude Code IDE"`
-3. Sublime Text を再起動。ステータスバーに `Claude ○ :<port>` が出れば待受中
+   - **macOS**: `ln -s /path/to/repo "$HOME/Library/Application Support/Sublime Text/Packages/Claude Code IDE"`
+   - **Linux**: `ln -s /path/to/repo "$HOME/.config/sublime-text/Packages/Claude Code IDE"`
+3. Sublime Text を再起動。ステータスバーに `Claude ○:<port>` が出れば待受中で、各ウィンドウに Recent Activity ペインが開きます
 4. 任意のターミナルで `claude` を起動し、`/ide` で **Sublime Text** を選択
+5. 任意: [Recent Activity パネル](#recent-activity-パネル) の hook を登録すると、ペインが「どのセッションが変えたか」を表示できます
 
 ## 開発
 
@@ -112,7 +116,7 @@ python scripts/open_file.py path/to/notes.md --preview     # ちら見せ・フ�
 
 あとはエージェントに教えるだけです（例: CLAUDE.md に「見せるべき成果物は `scripts/open_file.py` で開く」）— 成果物が作られるそばから Sublime に現れるようになります。
 
-この CLI はリポジトリ側にあります（`scripts/` はインストールパッケージに含まれません）。clone した checkout から実行してください — 上記の手動インストール構成ならそのまま使えます。
+この CLI はインストールパッケージに含まれません（`scripts/` のうち同梱されるのは activity hook だけです）。clone した checkout から実行してください — 上記の手動インストール構成ならそのまま使えます。
 
 ### コードはどこかに送信されますか？
 
@@ -120,7 +124,7 @@ python scripts/open_file.py path/to/notes.md --preview     # ちら見せ・フ�
 
 ### 複数の Claude Code セッションを同時に使えますか？
 
-使えます。サーバーは同時接続に対応しており、複数の claude セッション（プロジェクト別・タスク別など）が同じ Sublime に並列アタッチできます。各セッションの diff レビューは独立して管理されます。
+使えます。サーバーは同時接続に対応しており、複数の claude セッション（プロジェクト別・タスク別など）が同じ Sublime に並列アタッチできます。各セッションの diff レビューは独立して管理され、Recent Activity ペインにはどのセッションがどのファイルを変えたかが出ます。
 
 ### 対応プラットフォームは？
 

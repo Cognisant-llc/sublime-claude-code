@@ -8,7 +8,7 @@
 
 ![Six Claude Code sessions write docs in six projects; the Recent Activity pane in Sublime Text lists each file by project and session as it lands, and one click opens it](docs/demo.gif)
 
-**Status: core features working** — server + context sharing (M1), in-editor diff review (M2), parallel multi-session support, and the Recent Activity pane (0.3) are implemented and tested end-to-end against the real Claude Code client. Package Control submission in progress; manual install below works today.
+**Status: 0.3.x, all features working** — the IDE server with context sharing, in-editor diff review, parallel multi-session support, and the Recent Activity pane are implemented and tested end-to-end against the real Claude Code client ([releases](https://github.com/Cognisant-llc/sublime-claude-code/releases)). Package Control listing is pending; the manual install below works today.
 
 ## Motivation — why Sublime Text in the LLM era?
 
@@ -24,7 +24,7 @@ The longer argument — why coupling, not the editor, is the thing to choose: **
 
 When Claude Code connects (via `/ide` or auto-connect), the plugin provides:
 
-- **In-editor diff review** — Claude's proposed edits open as a side-by-side diff; accept, reject, or hand-edit before accepting (M2)
+- **In-editor diff review** — Claude's proposed edits open as a side-by-side diff; accept, reject, or hand-edit before accepting
 - **Context sharing** — current selection, open tabs, workspace folders, dirty state
 - **`selection_changed` streaming** — Claude always knows what you're looking at
 - **`@`-mention** — send the current selection range to the prompt
@@ -33,11 +33,11 @@ When Claude Code connects (via `/ide` or auto-connect), the plugin provides:
 
 ## Recent Activity panel
 
-When several Claude sessions work in parallel across projects, the hard part is knowing *what just changed, where, and by which session*. The panel answers that at a glance: recently changed files grouped **project → session → file**, in a pane next to the sidebar, newest first. One click (or Enter) opens the file — in Sublime for text and images, in the OS default app for PDF / Office / video.
+When several Claude sessions work in parallel across projects, the hard part is knowing *what just changed, where, and by which session*. The panel answers that at a glance: recently changed files grouped **project → session → file**, newest first, in a pane next to the sidebar that opens with every window. One click opens the file — in Sublime for text and images, in the OS default app for PDF / Office / video.
 
-A **project is the directory you opened `claude` in** — the session's working directory. A tool call that `cd`s into a subdirectory does not split the project; every session anchors to the one directory it started in (worktrees fold into their main repo). Don't want a project in the list? Press `h` on it to hide it (persists; `Shift+H` restores), or list directories to always hide under `activity_panel.hide_projects` — by basename (`"demo"`) or full path.
+By default it lists documents and media only (md, txt, html, pdf, xlsx/docx/pptx, csv, images, video, audio); code files can be toggled in per panel. Files changed since you last looked at the panel are marked `*`, `●`/`○` show which sessions are busy/idle, and `×N` collapses repeated writes to the same file.
 
-By default it lists documents and media only (md, txt, html, pdf, xlsx/docx/pptx, csv, images, video, audio); press `c` to include code files. Files changed since you last looked at the panel are marked `*`; `●`/`○` show which sessions are busy/idle, and worktrees fold into their main repository.
+A **project is the directory you opened `claude` in** — the session's working directory. A tool call that `cd`s into a subdirectory does not split the project, and git worktrees fold into their main repository. Don't want a project in the list? Hide it from the panel (persists until you restore hidden projects), or list directories to always hide under `activity_panel.hide_projects` — by basename (`"demo"`) or full path.
 
 - **What changed** comes from a filesystem watcher over the working directories of live sessions (Windows `ReadDirectoryChangesW`; noisy folders such as `node_modules` are pruned), so files written by shell commands, scripts, or by hand are caught too.
 - **Who changed it** comes from a tiny Claude Code hook that logs Edit/Write paths and Bash intervals per session. Register it once in `~/.claude/settings.json` (use `python3` instead of `py -3` on macOS/Linux):
@@ -51,16 +51,20 @@ By default it lists documents and media only (md, txt, html, pdf, xlsx/docx/pptx
 }
 ```
 
-Inside the panel: click / `Enter` open (a project header folds), `r` refresh, `c` toggle code files, `h` hide the project under the caret, `Shift+H` restore all hidden, `1`–`5` time window (1h / 6h / 24h / 3d / 7d). Command palette: *Recent Activity — Open Panel*, *Quick List* (a fuzzy list when you would rather not spend screen space), and *Hide / Show Hidden Projects*. Settings live under `activity_panel` (group, minimum width, window, `hide_projects`, prune list); the two logs are `~/.claude/logs/file-activity*.jsonl`, kept for 7 days. The watcher is Windows-only for now — elsewhere the panel shows hook records only.
+**Controls.** A single click opens the file under the pointer (a project header folds); that mouse binding ships active. Every action is in the command palette as *Claude Code IDE: Recent Activity — …*: Open Panel, Quick List (a fuzzy list when you would rather not spend screen space), Refresh, Toggle Code Files, Hide Project Under Caret, Show Hidden Projects, Edit Always-Hidden List, and Window 1h / 6h / 24h / 3 days / 7 days. Single-key shortcuts inside the panel — `Enter` open, `r` refresh, `c` code files, `h` hide, `Shift+H` restore, `1`–`5` time window — and `Ctrl+Alt+A` to open the panel from anywhere are *suggested*, not active: copy them from `Example.sublime-keymap` into your user keymap (Preferences › Package Settings › Claude Code IDE › Key Bindings). Package Control guideline: packages suggest keys, they don't claim them.
 
-## Install (manual, while in development)
+**Settings** live under `activity_panel`: `auto_open`, `group` and `min_width_chars` (where the pane goes and how wide), `window_hours`, `show_code`, `scope` (`"all"` = every live session's project; `"window"` = only files under this window's folders), `hide_projects`, `prune` (directory names never listed nor watched), `keep_days`. The two logs are `~/.claude/logs/file-activity*.jsonl`; they are compacted every 30 minutes and bounded by both age (`keep_days`, default 7) and record count, and the watcher log keeps document/media records only. The filesystem watcher is Windows-only for now — elsewhere the panel shows hook records only.
+
+## Install (manual — Package Control listing pending)
 
 1. Clone this repo anywhere.
 2. Link it into Sublime's `Packages` as `Claude Code IDE` (any folder name works — imports are relative — but this one matches Package Control installs, so the Preferences menu entries resolve):
    - **Windows**: `mklink /J "%APPDATA%\Sublime Text\Packages\Claude Code IDE" "C:\path\to\repo"`
-   - **macOS/Linux**: `ln -s /path/to/repo "~/Library/Application Support/Sublime Text/Packages/Claude Code IDE"`
-3. Restart Sublime Text. The status bar shows `Claude ○ :<port>` when the server is listening.
+   - **macOS**: `ln -s /path/to/repo "$HOME/Library/Application Support/Sublime Text/Packages/Claude Code IDE"`
+   - **Linux**: `ln -s /path/to/repo "$HOME/.config/sublime-text/Packages/Claude Code IDE"`
+3. Restart Sublime Text. The status bar shows `Claude ○:<port>` when the server is listening, and the Recent Activity pane opens in each window.
 4. In any terminal, run `claude`, then `/ide` and pick **Sublime Text**.
+5. Optional: register the activity hook (see [Recent Activity panel](#recent-activity-panel)) so the pane can say *which session* changed a file.
 
 ## Development
 
@@ -112,7 +116,7 @@ python scripts/open_file.py path/to/notes.md --preview     # glance, no focus st
 
 Then teach your agent (e.g. in `CLAUDE.md`): "when you produce a file I should look at, run `scripts/open_file.py <path>`" — deliverables start appearing in Sublime as they are made.
 
-The CLI lives in the repository (`scripts/` is excluded from the installed package), so run it from a cloned checkout — the manual-install setup above already has one.
+The CLI is not part of the installed package (of `scripts/`, only the activity hook ships), so run it from a cloned checkout — the manual install above is one.
 
 ### Does my code get sent anywhere?
 
@@ -120,7 +124,7 @@ The plugin itself sends nothing to the network. It runs a WebSocket server on `1
 
 ### Can I run multiple Claude Code sessions at once?
 
-Yes. The server accepts concurrent clients, so several Claude sessions (e.g. one per project or task) can attach to the same Sublime instance in parallel; diff reviews from each are tracked independently.
+Yes. The server accepts concurrent clients, so several Claude sessions (e.g. one per project or task) can attach to the same Sublime instance in parallel; diff reviews from each are tracked independently, and the Recent Activity pane shows which session changed which file.
 
 ### Which platforms are supported?
 

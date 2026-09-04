@@ -31,6 +31,26 @@ When Claude Code connects (via `/ide` or auto-connect), the plugin provides:
 - **Show-me CLI** — `scripts/open_file.py <path>` surfaces any file in the side pane, from a terminal or from the agent itself — the channel for "Claude, show me what you made" (see FAQ)
 - Lock-file discovery — works from Terminus inside Sublime *or* any external terminal
 
+## Recent Activity panel
+
+When several Claude sessions work in parallel across projects, the hard part is knowing *what just changed, where, and by which session*. The panel answers that at a glance: recently changed files grouped **project → session → file**, in a pane next to the sidebar, newest first. One click (or Enter) opens the file — in Sublime for text and images, in the OS default app for PDF / Office / video.
+
+By default it lists documents and media only (md, txt, html, pdf, xlsx/docx/pptx, csv, images, video, audio); press `c` to include code files. Files changed since you last looked at the panel are marked `*`; `●`/`○` show which sessions are busy/idle, and worktrees fold into their main repository.
+
+- **What changed** comes from a filesystem watcher over the working directories of live sessions (Windows `ReadDirectoryChangesW`; noisy folders such as `node_modules` are pruned), so files written by shell commands, scripts, or by hand are caught too.
+- **Who changed it** comes from a tiny Claude Code hook that logs Edit/Write paths and Bash intervals per session. Register it once in `~/.claude/settings.json` (use `python3` instead of `py -3` on macOS/Linux):
+
+```json
+"hooks": {
+  "PreToolUse":  [{ "matcher": "Bash",
+                    "hooks": [{ "type": "command", "command": "py -3 \"<path-to-package>/scripts/activity_hook.py\"", "timeout": 5 }] }],
+  "PostToolUse": [{ "matcher": "Bash|Edit|Write|MultiEdit|NotebookEdit",
+                    "hooks": [{ "type": "command", "command": "py -3 \"<path-to-package>/scripts/activity_hook.py\"", "timeout": 5 }] }]
+}
+```
+
+Inside the panel: click / `Enter` open (a project header folds), `r` refresh, `c` toggle code files, `1`–`5` time window (1h / 6h / 24h / 3d / 7d). Command palette: *Recent Activity — Open Panel* and *Quick List* (a fuzzy list when you would rather not spend screen space). Settings live under `activity_panel` (group, minimum width, window, prune list); the two logs are `~/.claude/logs/file-activity*.jsonl`, kept for 7 days. The watcher is Windows-only for now — elsewhere the panel shows hook records only.
+
 ## Install (manual, while in development)
 
 1. Clone this repo anywhere.

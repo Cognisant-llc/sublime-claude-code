@@ -8,7 +8,10 @@
 # the GitHub page only (Package Control downloads honor export-ignore).
 docs export-ignore
 tests export-ignore
-scripts export-ignore
+scripts/* export-ignore
+# ...except the Claude Code hook the Recent Activity panel needs at runtime
+# (per-file pattern above so this negation can re-include it).
+scripts/activity_hook.py -export-ignore
 uv.lock export-ignore
 pyproject.toml export-ignore
 .gitignore export-ignore

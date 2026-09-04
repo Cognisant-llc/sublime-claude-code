@@ -21,5 +21,47 @@
 		"keys": ["ctrl+alt+backspace"],
 		"command": "claude_ide_diff_reject",
 		"context": [{ "key": "setting.claude_diff_tab", "operator": "not_equal", "operand": null }]
+	},
+
+	// --- Recent Activity panel (inert outside the panel view) ---
+	// Open / focus the panel, and the fuzzy quick list, from anywhere:
+	{ "keys": ["ctrl+alt+a"], "command": "claude_ide_activity_open" },
+	{ "keys": ["ctrl+alt+shift+a"], "command": "claude_ide_activity_quick" },
+	// Inside the panel: Enter opens the file under the caret (or folds a project);
+	// double-click does the same without any binding.
+	{
+		"keys": ["enter"],
+		"command": "claude_ide_activity_activate",
+		"context": [{ "key": "setting.claude_activity_panel", "operator": "equal", "operand": true }]
+	},
+	{
+		"keys": ["r"],
+		"command": "claude_ide_activity_refresh",
+		"context": [{ "key": "setting.claude_activity_panel", "operator": "equal", "operand": true }]
+	},
+	{
+		"keys": ["c"],
+		"command": "claude_ide_activity_toggle_code",
+		"context": [{ "key": "setting.claude_activity_panel", "operator": "equal", "operand": true }]
+	},
+	{
+		"keys": ["1"], "command": "claude_ide_activity_set_window", "args": { "hours": 1 },
+		"context": [{ "key": "setting.claude_activity_panel", "operator": "equal", "operand": true }]
+	},
+	{
+		"keys": ["2"], "command": "claude_ide_activity_set_window", "args": { "hours": 6 },
+		"context": [{ "key": "setting.claude_activity_panel", "operator": "equal", "operand": true }]
+	},
+	{
+		"keys": ["3"], "command": "claude_ide_activity_set_window", "args": { "hours": 24 },
+		"context": [{ "key": "setting.claude_activity_panel", "operator": "equal", "operand": true }]
+	},
+	{
+		"keys": ["4"], "command": "claude_ide_activity_set_window", "args": { "hours": 72 },
+		"context": [{ "key": "setting.claude_activity_panel", "operator": "equal", "operand": true }]
+	},
+	{
+		"keys": ["5"], "command": "claude_ide_activity_set_window", "args": { "hours": 168 },
+		"context": [{ "key": "setting.claude_activity_panel", "operator": "equal", "operand": true }]
 	}
 ]

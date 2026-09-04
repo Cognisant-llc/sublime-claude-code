@@ -73,6 +73,32 @@ class ClaudeIdeDumpStateCommand(sublime_plugin.ApplicationCommand):
                         transients.append(
                             {"file": os.path.basename(view.file_name()), "group": group}
                         )
+            panels = []
+            for window in sublime.windows():
+                for view in window.views():
+                    if not view.settings().get("claude_activity_panel"):
+                        continue
+                    longest = max(view.lines(sublime.Region(0, view.size())),
+                                  key=lambda r: r.size(), default=sublime.Region(0, 0))
+                    xs = [view.text_to_layout(pt)[0] for pt in range(longest.a, longest.b + 1)]
+                    ys = [view.text_to_layout(pt)[1] for pt in range(longest.a, longest.b + 1)]
+                    wrap_at = next((i for i, y in enumerate(ys) if y > ys[0]), None)
+                    panels.append(
+                        {
+                            "group": window.get_view_index(view)[0],
+                            "layout_cols": window.get_layout().get("cols"),
+                            "em_width": view.em_width(),
+                            "viewport": list(view.viewport_extent()),
+                            "layout_extent": list(view.layout_extent()),
+                            "longest_chars": longest.size(),
+                            "longest_x_max": max(xs) if xs else None,
+                            "wrap_at_char": wrap_at,
+                            "adv_probe": (view.text_to_layout(1)[0] - view.text_to_layout(0)[0]),
+                            "text_width": view.settings().get("claude_activity_width"),
+                            "summary": view.settings().get("claude_activity_summary"),
+                            "lines": view.rowcol(view.size())[0] + 1,
+                        }
+                    )
             state = {
                 "running": bridge.is_running(),
                 "port": bridge.server_port(),
@@ -80,6 +106,7 @@ class ClaudeIdeDumpStateCommand(sublime_plugin.ApplicationCommand):
                 "num_groups": sublime.active_window().num_groups(),
                 "sheets": sheets,
                 "transients": transients,  # preview tabs are invisible to sheets()
+                "activity_panels": panels,
             }
         except Exception as exc:  # noqa: BLE001 - always produce a file
             state = {"error": str(exc)}

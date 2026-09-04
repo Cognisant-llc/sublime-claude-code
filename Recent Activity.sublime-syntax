@@ -1,0 +1,57 @@
+%YAML 1.2
+---
+# Highlighting for the Recent Activity panel (read-only scratch view).
+# Scopes are chosen so any colour scheme gives sensible contrast:
+#   project header  → entity.name.section (bold in most schemes)
+#   busy session    → keyword (accent colour), idle/ended → comment
+#   unseen file (*) → markup.inserted (green-ish), seen file → plain text
+#   times, dirs, worktree tags, counts → comment (muted)
+name: Recent Activity
+scope: text.claude-activity
+hidden: true
+file_extensions: []
+
+contexts:
+  main:
+    # ▼ gg_ds                       5 ●2
+    - match: '^([▼▶]) (\S.*?)\s{2,}(\S.*)$'
+      captures:
+        1: punctuation.definition.heading.claude-activity
+        2: entity.name.section.claude-activity
+        3: constant.numeric.claude-activity
+    - match: '^([▼▶]) (\S.*)$'
+      captures:
+        1: punctuation.definition.heading.claude-activity
+        2: entity.name.section.claude-activity
+    #   ● session-name  (busy)
+    - match: '^  (●) (.*)$'
+      captures:
+        1: keyword.control.claude-activity
+        2: keyword.control.claude-activity
+    #   ○ / ◌ / · session-name  (idle / ended / unattributed)
+    - match: '^  ([○◌·]) (.*)$'
+      captures:
+        1: comment.claude-activity
+        2: variable.function.claude-activity
+    #   * 14:52 docs/x.md  ⟨wt⟩  ×3   (unseen since the panel was last focused)
+    - match: '^  (\*) (\d\d:\d\d|\d\d/\d\d \d\d:\d\d) (.*?)((?:  ⟨[^⟩]*⟩)?)((?:  ×\d+)?)$'
+      captures:
+        1: markup.inserted.claude-activity
+        2: comment.claude-activity
+        3: markup.inserted.claude-activity
+        4: comment.claude-activity
+        5: comment.claude-activity
+    #     14:52 docs/x.md  ⟨wt⟩  ×3
+    - match: '^    (\d\d:\d\d|\d\d/\d\d \d\d:\d\d) (.*?)((?:  ⟨[^⟩]*⟩)?)((?:  ×\d+)?)$'
+      captures:
+        1: comment.claude-activity
+        2: text.claude-activity
+        3: comment.claude-activity
+        4: comment.claude-activity
+    - match: '^      … .*$'
+      scope: comment.claude-activity
+    - match: '^  \(no recent changes\)$'
+      scope: comment.claude-activity
+    # header line: "24h  ·  docs & media"
+    - match: '^\S.*$'
+      scope: comment.claude-activity

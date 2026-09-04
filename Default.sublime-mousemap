@@ -1,0 +1,13 @@
+// Mouse bindings — active ONLY inside the Recent Activity panel view
+// (the context guard keeps them inert in every other view).
+//
+// Single click opens the file under the pointer (or folds a project header);
+// the caret still moves because the default drag_select runs on press.
+[
+	{
+		"button": "button1", "count": 1, "modifiers": [],
+		"press_command": "drag_select",
+		"command": "claude_ide_activity_activate",
+		"context": [{ "key": "setting.claude_activity_panel", "operator": "equal", "operand": true }]
+	}
+]

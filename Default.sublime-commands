@@ -28,6 +28,47 @@
 		"command": "claude_ide_diff_reject"
 	},
 	{
+		"caption": "Claude Code IDE: Recent Activity — Open Panel",
+		"command": "claude_ide_activity_open"
+	},
+	{
+		"caption": "Claude Code IDE: Recent Activity — Quick List",
+		"command": "claude_ide_activity_quick"
+	},
+	{
+		"caption": "Claude Code IDE: Recent Activity — Refresh",
+		"command": "claude_ide_activity_refresh"
+	},
+	{
+		"caption": "Claude Code IDE: Recent Activity — Toggle Code Files",
+		"command": "claude_ide_activity_toggle_code"
+	},
+	{
+		"caption": "Claude Code IDE: Recent Activity — Window 1h",
+		"command": "claude_ide_activity_set_window",
+		"args": { "hours": 1 }
+	},
+	{
+		"caption": "Claude Code IDE: Recent Activity — Window 6h",
+		"command": "claude_ide_activity_set_window",
+		"args": { "hours": 6 }
+	},
+	{
+		"caption": "Claude Code IDE: Recent Activity — Window 24h",
+		"command": "claude_ide_activity_set_window",
+		"args": { "hours": 24 }
+	},
+	{
+		"caption": "Claude Code IDE: Recent Activity — Window 3 days",
+		"command": "claude_ide_activity_set_window",
+		"args": { "hours": 72 }
+	},
+	{
+		"caption": "Claude Code IDE: Recent Activity — Window 7 days",
+		"command": "claude_ide_activity_set_window",
+		"args": { "hours": 168 }
+	},
+	{
 		"caption": "Claude Code IDE: Dev — Reload Plugin (with submodules)",
 		"command": "claude_ide_dev_reload"
 	},

@@ -20,5 +20,41 @@
 
 	// Print protocol frames and lifecycle events to the Sublime console
 	// (View > Show Console). Enable when debugging connection issues.
-	"debug": false
+	"debug": false,
+
+	// Recent Activity panel: files changed by Claude sessions, grouped
+	// project → session → file. Needs the hook script registered in
+	// ~/.claude/settings.json (see README "Recent Activity").
+	"activity_panel": {
+		"enabled": true,
+		// Open the panel automatically in every window on start.
+		"auto_open": true,
+		// Group index for the panel (0 = left-most; a 2-column layout is
+		// created when the window has a single group).
+		"group": 0,
+		// Widen the panel's column so at least this many characters fit when
+		// it opens (never more than half the window). 0 = leave the layout alone.
+		"min_width_chars": 34,
+		// Default time window in hours (change per panel with the 1..5 keys).
+		"window_hours": 24,
+		// false = documents & media only (md/txt/html/pdf/office/images/video);
+		// true = every file type. Toggle per panel with "c".
+		"show_code": false,
+		"max_files_per_session": 20,
+		// How often to poll the hook log and session list (milliseconds).
+		"poll_ms": 2000,
+		// Records older than this are dropped from the logs on start.
+		"keep_days": 7,
+		// Directory names never listed nor watched (matched at any depth).
+		"prune": [
+			".git", "node_modules", ".venv", "venv", "__pycache__", ".next", ".nuxt",
+			"dist", "build", "coverage", ".ruff_cache", ".pytest_cache", ".mypy_cache",
+			".cache", ".turbo", ".playwright-cli", "site-packages", ".claude",
+			"projects", "session-archive", "shell-snapshots", "file-history",
+			"image-cache", "paste-cache", "cache", "logs", "sessions", "tasks", "teams",
+			"jobs", "daemon", "tmp", "uploads", "backups", "statsig", "ide"
+		],
+		// Font size for the panel view only (null = editor default).
+		"font_size": null
+	}
 }

@@ -31,6 +31,26 @@ Claude Code が接続すると（`/ide` または自動接続）:
 - **表示用 CLI** — `scripts/open_file.py <path>` でターミナルやエージェント自身からファイルをサイドペインに表示 —「Claude、成果物を見せて」のためのチャネル（FAQ 参照）
 - **lock ファイル探索** — Sublime 内の Terminus からでも外部ターミナルからでも接続可能
 
+## Recent Activity パネル
+
+複数の Claude セッションを PJ 横断で並列に走らせると、「今どこで何が変わったか・どのセッションがやったか」が分からなくなります。このパネルはそれを一目で示します。直近に変更されたファイルを **PJ → セッション → ファイル** の 3 階層・新しい順で、サイドバー隣のペインに常駐表示し、クリック（または Enter）1 回で開きます（テキスト・画像は Sublime、PDF / Office / 動画は OS 既定アプリ）。
+
+既定では文書・メディアのみ（md, txt, html, pdf, xlsx/docx/pptx, csv, 画像, 動画, 音声）。`c` でコードも含めます。前回パネルを見てから変わったファイルには `*`、セッションの稼働状態は `●`（busy）/`○`（idle）、worktree は親リポジトリに畳んで表示します。
+
+- **何が変わったか**: 稼働中セッションの作業ディレクトリをファイルシステム監視（Windows `ReadDirectoryChangesW`、`node_modules` 等は除外）。シェルコマンドやスクリプト、手編集による変更も拾います
+- **誰が変えたか**: Claude Code の hook が Edit/Write のパスと Bash の実行区間をセッション別に記録。`~/.claude/settings.json` に一度だけ登録します（macOS/Linux は `py -3` を `python3` に）:
+
+```json
+"hooks": {
+  "PreToolUse":  [{ "matcher": "Bash",
+                    "hooks": [{ "type": "command", "command": "py -3 \"<path-to-package>/scripts/activity_hook.py\"", "timeout": 5 }] }],
+  "PostToolUse": [{ "matcher": "Bash|Edit|Write|MultiEdit|NotebookEdit",
+                    "hooks": [{ "type": "command", "command": "py -3 \"<path-to-package>/scripts/activity_hook.py\"", "timeout": 5 }] }]
+}
+```
+
+パネル内の操作: クリック / `Enter` で開く（PJ 行は折り畳み）、`r` 再読込、`c` コード表示切替、`1`〜`5` で期間（1h / 6h / 24h / 3d / 7d）。コマンドパレット: *Recent Activity — Open Panel* と *Quick List*（画面を使いたくない時のあいまい検索一覧）。設定は `activity_panel` ブロック（グループ・最小幅・期間・除外一覧）、ログは `~/.claude/logs/file-activity*.jsonl`（7 日保持）。ファイル監視は現状 Windows のみ（他 OS では hook 記録のみ表示）。
+
 ## インストール（開発中につき手動）
 
 1. このリポジトリを任意の場所に clone

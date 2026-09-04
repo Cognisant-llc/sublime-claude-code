@@ -93,6 +93,13 @@ class SessionInfo:
         self.live = live
 
 
+def fallback_label(sid: str, cwd: str) -> str:
+    """Label for a session without a name: ``<project>-<id4>`` reads better
+    than a bare hex id and matches Claude Code's own derived names."""
+    base = os.path.basename(os.path.normpath(cwd)) if cwd else ""
+    return f"{base}-{sid[:4]}" if base else sid[:8]
+
+
 def load_sessions(sessions_dir: str) -> Dict[str, SessionInfo]:
     """Read ``~/.claude/sessions/<pid>.json`` (one per live Claude process)."""
     out = {}  # type: Dict[str, SessionInfo]
@@ -113,7 +120,7 @@ def load_sessions(sessions_dir: str) -> Dict[str, SessionInfo]:
         if not sid or not cwd:
             continue
         out[sid] = SessionInfo(
-            sid, j.get("name") or sid[:8], cwd, j.get("status", ""),
+            sid, j.get("name") or fallback_label(sid, cwd), cwd, j.get("status", ""),
             j.get("kind", ""), float(j.get("startedAt", 0)) / 1000.0, True,
         )
     return out
@@ -144,6 +151,17 @@ def worktree_main_root(wt_dir: str) -> Optional[str]:
     if len(parts) >= 3 and parts[-2].lower() == "worktrees" and parts[-3].lower() == ".git":
         return os.sep.join(parts[:-3])
     return None
+
+
+def is_watchable_root(root: str) -> bool:
+    """False for the home directory, its parents and drive roots: watching
+    them recursively would flood the panel with AppData/system noise."""
+    n = norm(root)
+    home = norm(os.path.expanduser("~"))
+    if n == home or home.startswith(n + os.sep):
+        return False
+    drive, tail = os.path.splitdrive(n)
+    return bool(tail.strip(os.sep))
 
 
 def sibling_worktrees(root: str) -> List[str]:
@@ -181,12 +199,16 @@ class RootIndex:
 
     def watch_dirs(self) -> List[str]:
         """Directories the filesystem watcher should cover (roots + worktrees
-        outside of them)."""
-        dirs = list(self._roots.values())
+        outside of them). Roots too broad to watch (home, drive roots) are
+        left to hook records only."""
+        dirs = [r for r in self._roots.values() if is_watchable_root(r)]
         for wt_norm, (_root, _label) in self._wt.items():
             if not any(wt_norm.startswith(norm(r) + os.sep) for r in self._roots.values()):
                 dirs.append(self._wt_real[wt_norm])
-        return sorted(set(dirs), key=str.lower)
+        # a recursive watch on the outer directory already covers nested ones
+        outer = [d for d in dirs
+                 if not any(norm(d).startswith(norm(o) + os.sep) for o in dirs if o != d)]
+        return sorted(set(outer), key=str.lower)
 
     def add_root(self, root: str) -> None:
         if not root:
@@ -201,12 +223,9 @@ class RootIndex:
             return
         if n in self._roots:
             return
-        # do not add a root nested inside an existing one (keep the outer)
-        for existing in list(self._roots):
-            if n.startswith(existing + os.sep):
-                return
-            if existing.startswith(n + os.sep):
-                del self._roots[existing]
+        # nested roots are kept: classify() picks the most specific one, so a
+        # session started in the home directory never swallows the projects
+        # below it into one group
         self._roots[n] = root
         for wt in sibling_worktrees(root):
             main = worktree_main_root(wt)
@@ -358,7 +377,7 @@ class ActivityModel:
         s = self.sessions.get(sid)
         if s:
             return s.name
-        return self._names.get(sid) or sid[:8]
+        return self._names.get(sid) or fallback_label(sid, self._cwds.get(sid, ""))
 
     def session_status(self, sid: Optional[str]) -> str:
         """'busy' / 'idle' / 'ended' / '' (unattributed)."""
@@ -480,16 +499,22 @@ class ActivityModel:
     # -- tree --
 
     def tree(self, window_seconds: float, show_code: bool = False,
-             now: Optional[float] = None) -> List[Dict[str, Any]]:
+             now: Optional[float] = None,
+             within: Optional[Iterable[str]] = None) -> List[Dict[str, Any]]:
         """``[{root, label, latest, count, live, sessions: [{sid, label, status,
-        latest, files: [Change]}]}]`` newest first at every level."""
+        latest, files: [Change]}]}]`` newest first at every level.
+        ``within``: only files under one of these directories (a window's
+        folders, for example); None = everything."""
         now = now or time.time()
         cutoff = now - window_seconds
+        scope = [norm(d) + os.sep for d in within] if within is not None else None
         by_root = {}  # type: Dict[str, Dict[str, Any]]
         for ch in self.changes.values():
             if ch.ts < cutoff:
                 continue
             if ch.cls == "code" and not show_code:
+                continue
+            if scope is not None and not any(norm(ch.path).startswith(d) for d in scope):
                 continue
             node = by_root.get(ch.root)
             if node is None:

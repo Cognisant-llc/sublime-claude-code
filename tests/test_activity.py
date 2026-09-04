@@ -44,6 +44,11 @@ def test_is_pruned():
     assert not A.is_pruned(["docs", "a"], A.DEFAULT_PRUNE)
 
 
+def test_fallback_label_uses_project_dir():
+    assert A.fallback_label("2f383bbb-1", r"C:\w\shop-web") == "shop-web-2f38"
+    assert A.fallback_label("2f383bbb-1", "") == "2f383bbb"
+
+
 # ---------- roots / worktrees ----------
 
 
@@ -51,21 +56,37 @@ def test_root_index_classify_and_nesting(tmp_path):
     pj = _root(tmp_path, "gg_ds")
     idx = A.RootIndex()
     idx.add_root(pj)
-    idx.add_root(os.path.join(pj, "docs"))  # nested: ignored
-    assert idx.roots() == [pj]
     f = os.path.join(pj, "docs", "a.md")
     assert idx.classify(f) == (pj, "", os.path.join("docs", "a.md"))
     assert idx.classify(str(tmp_path / "elsewhere.md")) is None
+    # a session started in a subdirectory is its own (more specific) project
+    sub = os.path.join(pj, "docs")
+    os.mkdir(sub)
+    idx.add_root(sub)
+    assert idx.roots() == [pj, sub]
+    assert idx.classify(f) == (sub, "", "a.md")
+    assert idx.watch_dirs() == [pj]
 
 
-def test_outer_root_replaces_inner(tmp_path):
+def test_nested_roots_keep_the_most_specific(tmp_path):
     outer = _root(tmp_path, "works")
     inner = os.path.join(outer, "pj")
     os.mkdir(inner)
     idx = A.RootIndex()
     idx.add_root(inner)
     idx.add_root(outer)
-    assert idx.roots() == [outer]
+    assert idx.roots() == [outer, inner]
+    assert idx.classify(os.path.join(inner, "a.md"))[0] == inner
+    assert idx.classify(os.path.join(outer, "b.md"))[0] == outer
+    assert idx.watch_dirs() == [outer]  # the watcher covers the outer only
+
+
+def test_home_and_drive_roots_are_not_watched():
+    home = os.path.expanduser("~")
+    assert not A.is_watchable_root(home)
+    assert not A.is_watchable_root(os.path.dirname(home))
+    assert not A.is_watchable_root(os.path.splitdrive(home)[0] + os.sep)
+    assert A.is_watchable_root(os.path.join(home, "work", "pj"))
 
 
 def test_sibling_worktree_folds_into_main(tmp_path):
@@ -213,6 +234,8 @@ def test_hook_log_root_is_learned_without_live_session(tmp_path):
     assert m.changes[A.norm(f)].sid == "gone"
     assert m.session_label("gone") == "old-name"
     assert m.session_status("gone") == "ended"
+    m.ingest_hook({"ts": NOW, "ev": "edit", "sid": "anon-1234", "cwd": pj, "path": f})
+    assert m.session_label("anon-1234") == "ended_pj-anon"
 
 
 # ---------- tree + render ----------
@@ -237,6 +260,9 @@ def test_tree_groups_and_orders(tmp_path):
     assert tree[1]["live"] == 2
     tree_all = m.tree(3600, show_code=True, now=NOW)
     assert tree_all[0]["count"] == 2
+    scoped = m.tree(3600, now=NOW, within=[pj])
+    assert [n["label"] for n in scoped] == ["gg_ds"]
+    assert m.tree(3600, now=NOW, within=[os.path.join(pj, "nowhere")]) == []
     assert m.tree(20, now=NOW)[0]["count"] == 1 and len(m.tree(20, now=NOW)) == 1
 
 

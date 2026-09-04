@@ -96,6 +96,9 @@ class ClaudeIdeDumpStateCommand(sublime_plugin.ApplicationCommand):
                             "adv_probe": (view.text_to_layout(1)[0] - view.text_to_layout(0)[0]),
                             "text_width": view.settings().get("claude_activity_width"),
                             "summary": view.settings().get("claude_activity_summary"),
+                            "targets": view.settings().get("claude_activity_targets"),
+                            "text": view.substr(sublime.Region(0, view.size())),
+                            "line_height": view.line_height(),
                             "lines": view.rowcol(view.size())[0] + 1,
                         }
                     )
@@ -107,6 +110,16 @@ class ClaudeIdeDumpStateCommand(sublime_plugin.ApplicationCommand):
                 "sheets": sheets,
                 "transients": transients,  # preview tabs are invisible to sheets()
                 "activity_panels": panels,
+                "windows": [
+                    {
+                        "id": w.id(),
+                        "active": w.id() == sublime.active_window().id(),
+                        "sidebar_visible": w.is_sidebar_visible(),
+                        "project": os.path.basename(w.project_file_name() or ""),
+                        "folders": len(w.folders()),
+                    }
+                    for w in sublime.windows()
+                ],
             }
         except Exception as exc:  # noqa: BLE001 - always produce a file
             state = {"error": str(exc)}

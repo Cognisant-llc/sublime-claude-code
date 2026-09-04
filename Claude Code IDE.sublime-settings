@@ -40,6 +40,9 @@
 		// false = documents & media only (md/txt/html/pdf/office/images/video);
 		// true = every file type. Toggle per panel with "c".
 		"show_code": false,
+		// "all" = every live session's project; "window" = only files under
+		// this window's folders (one Sublime window per project setups).
+		"scope": "all",
 		"max_files_per_session": 20,
 		// How often to poll the hook log and session list (milliseconds).
 		"poll_ms": 2000,

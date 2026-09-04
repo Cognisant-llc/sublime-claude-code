@@ -2,13 +2,13 @@
 
 **English** | [日本語](./README.ja.md)
 
-Native [Claude Code](https://claude.com/product/claude-code) IDE integration for Sublime Text 4 — in-editor diff review (accept/reject), live selection sharing, and `@`-mentions, speaking the same WebSocket/MCP protocol as the official VS Code and JetBrains extensions.
+**Run six Claude Code sessions in parallel and still know what changed where.** Native [Claude Code](https://claude.com/product/claude-code) integration for Sublime Text 4: a **Recent Activity** pane lists every file your sessions touched — grouped project → session → file, one click to open — next to in-editor diff review (accept/reject), live selection sharing and `@`-mentions, over the same WebSocket/MCP protocol as the official VS Code and JetBrains extensions.
 
 > **Unofficial community plugin** — not affiliated with or endorsed by Anthropic. "Claude" and "Claude Code" are trademarks of Anthropic, PBC.
 
-![Claude Code proposing an edit in Sublime Text: the terminal runs claude, a side-by-side diff opens in the editor, and Accept writes the file](docs/demo.gif)
+![Six Claude Code sessions write docs in six projects; the Recent Activity pane in Sublime Text lists each file by project and session as it lands, and one click opens it](docs/demo.gif)
 
-**Status: core features working** — server + context sharing (M1), in-editor diff review (M2), and parallel multi-session support are implemented and tested end-to-end against the real Claude Code client. Package Control submission in progress; manual install below works today.
+**Status: core features working** — server + context sharing (M1), in-editor diff review (M2), parallel multi-session support, and the Recent Activity pane (0.3) are implemented and tested end-to-end against the real Claude Code client. Package Control submission in progress; manual install below works today.
 
 ## Motivation — why Sublime Text in the LLM era?
 

@@ -185,7 +185,7 @@ class ClaudeIdeActivityQuickCommand(sublime_plugin.WindowCommand):
     def run(self):
         if not activity_panel.is_running():
             _safe_start_activity()
-        items = activity_panel.flat_items()
+        items = activity_panel.flat_items(window=self.window)
         if not items:
             sublime.status_message("Recent Activity: nothing in the current window")
             return

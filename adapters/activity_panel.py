@@ -32,6 +32,7 @@ DEFAULTS = {
     "min_width_chars": 34,
     "window_hours": 24,
     "show_code": False,
+    "scope": "all",
     "max_files_per_session": 20,
     "poll_ms": 2000,
     "keep_days": 7,
@@ -404,8 +405,10 @@ def render_view(view):
         return
     st = _panel_state(view)
     c = conf()
+    within = _scope_dirs(view.window())
     with _lock:
-        tree = _model.tree(st["window_hours"] * 3600.0, show_code=st["show_code"])
+        tree = _model.tree(st["window_hours"] * 3600.0, show_code=st["show_code"],
+                           within=within)
         live = sum(1 for s in _model.sessions.values() if s.live)
     hours = st["window_hours"]
     span = f"{hours:g}h" if hours < 48 else f"{hours / 24.0:g}d"
@@ -430,6 +433,14 @@ def render_view(view):
         view.sel().add(sublime.Region(min(a, view.size()), min(b, view.size())))
     view.set_viewport_position(pos, False)
     _set_status_text(view, A.summary(tree, live))
+
+
+def _scope_dirs(window):
+    """``scope: "window"`` limits the panel to the window's folders."""
+    if conf().get("scope") != "window" or window is None:
+        return None
+    folders = window.folders()
+    return folders if folders else None
 
 
 def _set_status_text(view, text):
@@ -543,7 +554,7 @@ def refresh(view):
     render_view(view)
 
 
-def flat_items(window_hours=None, show_code=None):
+def flat_items(window_hours=None, show_code=None, window=None):
     """Newest-first list for the quick panel: ``[(label, detail, path)]``."""
     if _model is None:
         return []
@@ -551,7 +562,7 @@ def flat_items(window_hours=None, show_code=None):
     hours = window_hours if window_hours is not None else float(c["window_hours"])
     code = c["show_code"] if show_code is None else show_code
     with _lock:
-        tree = _model.tree(hours * 3600.0, show_code=code)
+        tree = _model.tree(hours * 3600.0, show_code=code, within=_scope_dirs(window))
     items = []
     for node in tree:
         for s in node["sessions"]:

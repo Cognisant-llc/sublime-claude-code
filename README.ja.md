@@ -2,13 +2,13 @@
 
 [English](./README.md) | **日本語**
 
-[Claude Code](https://claude.com/product/claude-code) を Sublime Text 4 にネイティブ統合するプラグイン — エディタ内 diff レビュー（Accept/Reject）、選択範囲のリアルタイム共有、`@`-mention に対応。公式の VS Code / JetBrains 拡張と同じ WebSocket/MCP プロトコルを実装しています。
+**Claude Code を 6 セッション並列で走らせても、「どこで何が変わったか」を見失わない。** [Claude Code](https://claude.com/product/claude-code) を Sublime Text 4 にネイティブ統合するプラグインです。**Recent Activity** ペインが各セッションの触ったファイルを PJ → セッション → ファイルの順に一覧し、ワンクリックで開けます。加えて、エディタ内 diff レビュー（Accept/Reject）、選択範囲のリアルタイム共有、`@`-mention に対応。公式の VS Code / JetBrains 拡張と同じ WebSocket/MCP プロトコルを実装しています。
 
 > **非公式のコミュニティプラグインです** — Anthropic とは無関係であり、承認を受けたものではありません。「Claude」および「Claude Code」は Anthropic, PBC の商標です。
 
-![Claude Code が Sublime Text 内で編集を提案する様子: ターミナルで claude が動き、side-by-side diff がエディタに開き、Accept でファイルに反映される](docs/demo.gif)
+![6 つの Claude Code セッションが 6 つの PJ で文書を書き、Sublime Text の Recent Activity ペインに PJ・セッション別にファイルが並んでいき、クリックで開く様子](docs/demo.gif)
 
-**ステータス: コア機能は動作します** — サーバー＋コンテキスト共有（M1）、エディタ内 diff レビュー（M2）、複数セッション並列接続まで、実際の Claude Code クライアントに対して E2E 検証済み。Package Control は申請中（下記の手動インストールは今すぐ使えます）。
+**ステータス: コア機能は動作します** — サーバー＋コンテキスト共有（M1）、エディタ内 diff レビュー（M2）、複数セッション並列接続、Recent Activity ペイン（0.3）まで、実際の Claude Code クライアントに対して E2E 検証済み。Package Control は申請中（下記の手動インストールは今すぐ使えます）。
 
 ## なぜ今 Sublime Text か
 

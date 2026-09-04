@@ -394,3 +394,61 @@ def test_tree_hidden_filters_projects(tmp_path):
                    "path": os.path.join(other, "b.md")})
     assert {n["label"] for n in m.tree(3600, now=NOW)} == {"gg_ds", "demo"}
     assert [n["label"] for n in m.tree(3600, now=NOW, hidden=["demo"])] == ["gg_ds"]
+
+
+# ---------- fs-log loggability + compaction bounds ----------
+
+
+def test_is_fs_loggable_excludes_code_temp_and_system():
+    assert A.is_fs_loggable(r"C:\w\pj\docs\a.md")
+    assert A.is_fs_loggable(r"C:\w\pj\out\report.pdf")
+    assert not A.is_fs_loggable(r"C:\w\pj\main.py")           # code
+    assert not A.is_fs_loggable(r"C:\w\pj\~$deck.pptx")       # temp
+    assert not A.is_fs_loggable(r"C:\Users\a\AppData\Local\Temp\x.md")  # system
+    assert not A.is_fs_loggable(r"C:\Users\a\.claude\history.jsonl")    # .claude churn
+    assert not A.is_fs_loggable(r"C:\w\pj\node_modules\p\readme.md")    # pruned
+
+
+def test_ingest_fs_returns_accepted(tmp_path):
+    m, pj = _model(tmp_path)
+    assert m.ingest_fs(os.path.join(pj, "a.md"), NOW) is True
+    assert m.ingest_fs(os.path.join(pj, "~$a.md"), NOW) is False       # temp dropped
+    assert m.ingest_fs(str(tmp_path / "outside.md"), NOW) is False     # no root
+    f = os.path.join(pj, "a.md")
+    assert m.ingest_fs(f, NOW + 1, "removed") is True
+    assert m.ingest_fs(f, NOW + 2, "removed") is False                 # already gone
+
+
+def _write_log(p, records):
+    p.write_text("".join(json.dumps(r) + "\n" for r in records))
+
+
+def test_compact_log_age_and_count(tmp_path):
+    p = tmp_path / "log.jsonl"
+    recs = [{"ts": NOW - i, "ev": "e", "path": f"C:/w/pj/f{i}.md"} for i in range(10)]
+    recs.append({"ts": NOW - 100000, "ev": "old", "path": "x"})  # too old
+    _write_log(p, recs)
+    assert A.compact_log(str(p), keep_seconds=3600, now=NOW) == 10       # old dropped
+    assert A.compact_log(str(p), keep_seconds=3600, now=NOW, max_records=4) == 4
+    assert len(p.read_text().splitlines()) == 4
+
+
+def test_compact_log_keep_pred(tmp_path):
+    p = tmp_path / "log.jsonl"
+    _write_log(p, [{"ts": NOW, "ev": "fs", "path": "C:/w/pj/a.md"},
+                   {"ts": NOW, "ev": "fs", "path": "C:/w/pj/main.py"}])
+    kept = A.compact_log(str(p), keep_seconds=3600, now=NOW,
+                         keep_pred=lambda r: A.is_fs_loggable(r.get("path", "")))
+    assert kept == 1 and "a.md" in p.read_text() and "main.py" not in p.read_text()
+
+
+def test_trim_bounds_session_maps(tmp_path):
+    m, pj = _model(tmp_path)
+    # an ended session with a change that will age out
+    m.ingest_hook({"ts": NOW - 100000, "ev": "edit", "sid": "old", "name": "old-s",
+                   "cwd": pj, "path": os.path.join(pj, "gone.md")})
+    assert "old" in m._cwds
+    m.set_sessions({"s1": A.SessionInfo("s1", "gg-ds-8e", pj, "busy")})  # old no longer live
+    m.trim(3600, now=NOW)
+    assert "old" not in m._cwds and "old" not in m._names
+    assert "s1" in m._cwds  # live session kept

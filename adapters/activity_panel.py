@@ -41,6 +41,13 @@ DEFAULTS = {
     "font_size": None,
 }
 
+# A hard ceiling on each log so a pathological burst can never grow it without
+# bound, on top of the keep_days age limit.
+MAX_LOG_RECORDS = 20000
+# Compact the logs in the background this often (seconds), not only at startup,
+# so a Sublime that stays open for days does not let them grow unbounded.
+COMPACT_EVERY = 1800.0
+
 _lock = threading.RLock()
 _model = None  # type: A.ActivityModel
 _watcher = None  # type: fswatch.Watcher
@@ -49,6 +56,7 @@ _running = False
 _dirty = False
 _render_scheduled = False
 _last_error = ""
+_last_compact = 0.0
 
 
 # ---------- settings / paths ----------
@@ -132,13 +140,7 @@ def start():
             return
         _running = True
         _model = A.ActivityModel(prune=c["prune"])
-        keep = float(c["keep_days"]) * 86400.0
-        for p in (hook_log_path(), fs_log_path()):
-            if os.path.exists(p):
-                try:
-                    A.compact_log(p, keep)
-                except OSError as exc:
-                    _log(f"compact failed: {exc}")
+        _compact_logs(float(c["keep_days"]) * 86400.0)
         _model.set_sessions(A.load_sessions(sessions_dir()))
         _hook_offset = 0
         _ingest_hook_log()
@@ -180,15 +182,39 @@ def _ingest_hook_log():
     return bool(records)
 
 
+def _compact_logs(keep_seconds):
+    """Bound both logs by age and count. The fs log is additionally filtered to
+    default-view records (A.is_fs_loggable), which is what physically removes
+    legacy system churn from an existing file. Runs under _lock; the hook tail
+    offset is reset to the compacted size so nothing is re-ingested."""
+    global _hook_offset, _last_compact
+    for p in (hook_log_path(), fs_log_path()):
+        if not os.path.exists(p):
+            continue
+        try:
+            pred = (lambda r: A.is_fs_loggable(r.get("path", ""))) if p == fs_log_path() else None
+            A.compact_log(p, keep_seconds, max_records=MAX_LOG_RECORDS, keep_pred=pred)
+        except OSError as exc:
+            _log(f"compact failed: {exc}")
+    try:
+        _hook_offset = os.path.getsize(hook_log_path())
+    except OSError:
+        _hook_offset = 0
+    _last_compact = time.time()
+
+
 def _backfill_fs_log():
     records, _ = A.read_log_tail(fs_log_path(), 0)
     for rec in records:
-        if rec.get("ev") != "fs" or not rec.get("path"):
+        path = rec.get("path")
+        if rec.get("ev") != "fs" or not path:
             continue
-        # never adopt the fs log's stored root — roots come only from session
-        # anchors (rebuild_roots ran before this); a change outside any anchor
-        # is picked up later once its session is attributed
-        _model.ingest_fs(rec["path"], float(rec["ts"]), rec.get("action", "modified"))
+        # defensive: ignore any legacy non-default-view line still present.
+        # roots come only from session anchors (rebuild_roots ran before this);
+        # a change outside any anchor is picked up once its session is attributed
+        if not A.is_fs_loggable(path):
+            continue
+        _model.ingest_fs(path, float(rec["ts"]), rec.get("action", "modified"))
 
 
 def _should_ignore(root, rel):
@@ -197,33 +223,25 @@ def _should_ignore(root, rel):
 
 
 def _on_fs_change(path, ts, action):
-    """Watcher thread: persist, ingest, mark dirty."""
+    """Watcher thread: ingest into the live model, and persist to the fs log
+    only default-view changes (see A.is_fs_loggable) so the file stays lean."""
     global _dirty
     with _lock:
         if not _running:
             return
-        root = _watch_root_for(path)
-        try:
-            os.makedirs(os.path.dirname(fs_log_path()), exist_ok=True)
-            with open(fs_log_path(), "a", encoding="utf-8") as fh:
-                fh.write(json.dumps({"ts": round(ts, 3), "ev": "fs", "path": path,
-                                     "action": action, "root": root},
-                                    ensure_ascii=False) + "\n")
-        except OSError as exc:
-            _log(f"fs log write failed: {exc}")
-        before = len(_model.changes)
-        _model.ingest_fs(path, ts, action)
-        if len(_model.changes) != before or A.norm(path) in _model.changes:
+        accepted = _model.ingest_fs(path, ts, action)
+        if accepted:
             _dirty = True
+            if action != "removed" and A.is_fs_loggable(path):
+                try:
+                    os.makedirs(os.path.dirname(fs_log_path()), exist_ok=True)
+                    with open(fs_log_path(), "a", encoding="utf-8") as fh:
+                        fh.write(json.dumps({"ts": round(ts, 3), "ev": "fs",
+                                             "path": path, "action": action},
+                                            ensure_ascii=False) + "\n")
+                except OSError as exc:
+                    _log(f"fs log write failed: {exc}")
     sublime.set_timeout(_schedule_render, 0)
-
-
-def _watch_root_for(path):
-    n = A.norm(path)
-    for r in (_watcher.roots() if _watcher else []):
-        if n.startswith(A.norm(r) + os.sep):
-            return r
-    return ""
 
 
 def _on_watch_error(root, msg):
@@ -250,6 +268,8 @@ def _tick():
                 _model.reattribute()
                 changed = True
             _model.trim(float(c["keep_days"]) * 86400.0)
+            if time.time() - _last_compact > COMPACT_EVERY:
+                _compact_logs(float(c["keep_days"]) * 86400.0)
             wanted = _model.roots.watch_dirs()
             if _watcher is not None and sorted(wanted) != _watcher.roots():
                 _watcher.set_roots(wanted)

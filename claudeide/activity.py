@@ -19,7 +19,7 @@ import os
 import re
 import time
 import unicodedata
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
 # ---------- classification ----------
 
@@ -52,6 +52,11 @@ DEFAULT_PRUNE = [
 TEMP_NAME_RE = re.compile(r"(^~\$|^\.~lock|\.tmp$|\.temp$|\.crdownload$|\.part$|\.swp$|~$)", re.I)
 WORKTREE_DIR_RE = re.compile(r"^\.?wt-", re.I)
 
+# Segments that mean "machine/system churn, never a project document": the
+# prune list plus the OS user-data roots. Used to keep the persisted fs log
+# lean (see is_fs_loggable). normcase-lowercased for Windows comparison.
+NOISE_SEGMENTS = {s.lower() for s in DEFAULT_PRUNE} | {"appdata"}
+
 
 def norm(path: str) -> str:
     """Case-insensitive, separator-normalised key for Windows paths."""
@@ -74,6 +79,22 @@ def is_temp_name(name: str) -> bool:
 def is_pruned(rel_parts: Iterable[str], prune: Iterable[str]) -> bool:
     prune_set = set(prune)
     return any(part in prune_set for part in rel_parts)
+
+
+def is_fs_loggable(path: str) -> bool:
+    """Whether a filesystem change is worth *persisting* to the fs log.
+
+    The fs log is the panel's default-view cache across Sublime restarts, so it
+    holds only what that view shows: a document or media file (not code, not a
+    temp/lock file) that lives in a project, not in system/tooling directories
+    (AppData, caches, .git, node_modules, .claude internals, build output). The
+    live in-memory model still ingests everything — this filter bounds the file
+    on disk, which is otherwise ~90% machine churn."""
+    if is_temp_name(os.path.basename(path)):
+        return False
+    if ext_class(path) == "code":
+        return False
+    return not any(seg in NOISE_SEGMENTS for seg in norm(path).split(os.sep))
 
 
 # ---------- sessions ----------
@@ -324,8 +345,13 @@ def read_log_tail(path: str, offset: int) -> Tuple[List[Dict[str, Any]], int]:
     return records, offset + len(data)
 
 
-def compact_log(path: str, keep_seconds: float, now: Optional[float] = None) -> int:
-    """Drop records older than ``keep_seconds``; returns the number kept."""
+def compact_log(path: str, keep_seconds: float, now: Optional[float] = None,
+                max_records: Optional[int] = None,
+                keep_pred: Optional[Callable[[Dict[str, Any]], bool]] = None) -> int:
+    """Rewrite ``path`` keeping only records that are recent enough (within
+    ``keep_seconds``), pass ``keep_pred`` if given, and — after that — number at
+    most ``max_records`` (newest kept). Bounds the file by BOTH age and count so
+    a burst cannot grow it without limit. Returns the number of records kept."""
     now = now or time.time()
     try:
         with open(path, encoding="utf-8", errors="replace") as fh:
@@ -335,8 +361,13 @@ def compact_log(path: str, keep_seconds: float, now: Optional[float] = None) -> 
     kept = []
     for line in lines:
         rec = parse_log_line(line)
-        if rec and float(rec.get("ts", 0)) >= now - keep_seconds:
-            kept.append(line if line.endswith("\n") else line + "\n")
+        if rec is None or float(rec.get("ts", 0)) < now - keep_seconds:
+            continue
+        if keep_pred is not None and not keep_pred(rec):
+            continue
+        kept.append(line if line.endswith("\n") else line + "\n")
+    if max_records is not None and len(kept) > max_records:
+        kept = kept[-max_records:]
     tmp = path + ".tmp"
     with open(tmp, "w", encoding="utf-8") as fh:
         fh.writelines(kept)
@@ -464,11 +495,13 @@ class ActivityModel:
             else:
                 spans.append([ts - 1.0, ts])
 
-    def ingest_fs(self, path: str, ts: float, action: str = "modified") -> None:
+    def ingest_fs(self, path: str, ts: float, action: str = "modified") -> bool:
+        """Ingest a filesystem change. Returns True when it changed the model
+        (a tracked file was added/updated/removed) so the caller can decide
+        whether to persist and re-render."""
         if action == "removed":
-            self.changes.pop(norm(path), None)
-            return
-        self._record(path, ts, "fs", None)
+            return self.changes.pop(norm(path), None) is not None
+        return self._record(path, ts, "fs", None)
 
     def _resolve_root(self, path: str, sid: Optional[str]) -> Optional[Tuple[str, str, str]]:
         """(root, worktree_label, rel) for a change: the most specific project
@@ -484,16 +517,16 @@ class ActivityModel:
             return anchor, "", os.path.relpath(path, anchor)
         return anchor, "", os.path.basename(path)
 
-    def _record(self, path: str, ts: float, source: str, sid: Optional[str]) -> None:
+    def _record(self, path: str, ts: float, source: str, sid: Optional[str]) -> bool:
         name = os.path.basename(path)
         if is_temp_name(name):
-            return
+            return False
         where = self._resolve_root(path, sid)
         if where is None:
-            return
+            return False
         root, wt, rel = where
         if is_pruned(rel.split(os.sep)[:-1], self.prune):
-            return
+            return False
         key = norm(path)
         cur = self.changes.get(key)
         if cur is None:
@@ -508,6 +541,7 @@ class ActivityModel:
             cur.sid = sid
         elif cur.sid is None:
             cur.sid = self._attribute(key, root, ts)
+        return True
 
     # -- attribution --
 
@@ -570,6 +604,17 @@ class ActivityModel:
             self._bash[sid] = [s for s in self._bash[sid] if (s[1] or s[0]) >= cutoff]
             if not self._bash[sid]:
                 del self._bash[sid]
+        # bound the per-session maps: keep only live sessions and those a
+        # surviving change still refers to, so months of ended sessions don't
+        # accumulate forever.
+        keep = {s.sid for s in self.sessions.values() if s.live}
+        keep |= {c.sid for c in self.changes.values() if c.sid}
+        for sid in list(self._cwds):
+            if sid not in keep:
+                self._cwds.pop(sid, None)
+                self._names.pop(sid, None)
+                self._authoritative.discard(sid)
+                self.sessions.pop(sid, None)
 
     # -- tree --
 

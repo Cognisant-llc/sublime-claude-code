@@ -33,6 +33,7 @@ DEFAULTS = {
     "window_hours": 24,
     "show_code": False,
     "scope": "all",
+    "hide_projects": [],
     "max_files_per_session": 20,
     "poll_ms": 2000,
     "keep_days": 7,
@@ -76,6 +77,43 @@ def sessions_dir():
     return os.path.join(claude_home(), "sessions")
 
 
+def hidden_path():
+    """Projects hidden by hand (the `h` key) persist here, so a hide survives
+    restarts without editing settings by hand."""
+    return os.path.join(claude_home(), "logs", "activity-hidden.json")
+
+
+def load_manual_hidden():
+    try:
+        with open(hidden_path(), encoding="utf-8") as fh:
+            data = json.load(fh)
+        got = data.get("hidden", []) if isinstance(data, dict) else data
+        return [str(x) for x in got if x]
+    except (OSError, ValueError):
+        return []
+
+
+def save_manual_hidden(paths):
+    seen, out = set(), []
+    for p in paths:
+        n = A.norm(p)
+        if n not in seen:
+            seen.add(n)
+            out.append(p)
+    try:
+        os.makedirs(os.path.dirname(hidden_path()), exist_ok=True)
+        with open(hidden_path(), "w", encoding="utf-8") as fh:
+            json.dump({"hidden": out}, fh, ensure_ascii=False, indent=1)
+    except OSError as exc:
+        _log(f"hidden save failed: {exc}")
+
+
+def all_hidden():
+    """Union of the `hide_projects` setting (system/manual, editable) and the
+    `h`-key persisted list."""
+    return list(conf().get("hide_projects") or []) + load_manual_hidden()
+
+
 def _log(msg):
     if sublime.load_settings(SETTINGS_FILE).get("debug", False):
         print("[ClaudeCodeIDE] activity: " + msg)
@@ -104,6 +142,7 @@ def start():
         _model.set_sessions(A.load_sessions(sessions_dir()))
         _hook_offset = 0
         _ingest_hook_log()
+        _model.rebuild_roots()  # anchors from the hook log before fs backfill
         _backfill_fs_log()
         _model.reattribute()
         _watcher = fswatch.Watcher(_on_fs_change, should_ignore=_should_ignore,
@@ -146,8 +185,9 @@ def _backfill_fs_log():
     for rec in records:
         if rec.get("ev") != "fs" or not rec.get("path"):
             continue
-        if rec.get("root"):
-            _model.roots.add_root(rec["root"])
+        # never adopt the fs log's stored root — roots come only from session
+        # anchors (rebuild_roots ran before this); a change outside any anchor
+        # is picked up later once its session is attributed
         _model.ingest_fs(rec["path"], float(rec["ts"]), rec.get("action", "modified"))
 
 
@@ -406,14 +446,17 @@ def render_view(view):
     st = _panel_state(view)
     c = conf()
     within = _scope_dirs(view.window())
+    hidden = all_hidden()
     with _lock:
         tree = _model.tree(st["window_hours"] * 3600.0, show_code=st["show_code"],
-                           within=within)
+                           within=within, hidden=hidden)
         live = sum(1 for s in _model.sessions.values() if s.live)
     hours = st["window_hours"]
     span = f"{hours:g}h" if hours < 48 else f"{hours / 24.0:g}d"
-    header = "{}  ·  {}{}".format(span, "all files" if st["show_code"] else "docs & media",
-                                  "  ·  ⚠ " + _last_error if _last_error else "")
+    header = "{}  ·  {}{}{}".format(
+        span, "all files" if st["show_code"] else "docs & media",
+        f"  ·  {len(hidden)} hidden" if hidden else "",
+        "  ·  ⚠ " + _last_error if _last_error else "")
     width = _text_width(view)
     text, targets = A.render(tree, st["collapsed"], st["last_seen"], width=width,
                              max_files=int(c["max_files_per_session"]), header=header)
@@ -520,6 +563,43 @@ def open_target(window, path):
     window.focus_view(view)
 
 
+def project_root_at(view, point=None):
+    """The project root of the row under ``point``: a project header's own
+    root, or the root a file row belongs to."""
+    if point is None:
+        sel = view.sel()
+        point = sel[0].b if sel else 0
+    t = target_at(view, point)
+    if t is None:
+        return None
+    kind, target = t
+    if kind == "pj":
+        return target
+    with _lock:
+        ch = _model.changes.get(A.norm(target)) if _model is not None else None
+    return ch.root if ch is not None else None
+
+
+def hide_project_at(view, point=None):
+    root = project_root_at(view, point)
+    if not root:
+        sublime.status_message("Recent Activity: no project under the caret")
+        return
+    save_manual_hidden(load_manual_hidden() + [root])
+    sublime.status_message(f"Recent Activity: hid {os.path.basename(root)} — "
+                           "restore with Show Hidden Projects")
+    _render_all()
+
+
+def unhide_all():
+    n = len(load_manual_hidden())
+    save_manual_hidden([])
+    sublime.status_message(f"Recent Activity: restored {n} hidden project(s)"
+                           + (" (the hide_projects setting still applies)"
+                              if conf().get("hide_projects") else ""))
+    _render_all()
+
+
 def _main_group(window):
     panel = find_panel(window)
     if panel is None:
@@ -562,7 +642,8 @@ def flat_items(window_hours=None, show_code=None, window=None):
     hours = window_hours if window_hours is not None else float(c["window_hours"])
     code = c["show_code"] if show_code is None else show_code
     with _lock:
-        tree = _model.tree(hours * 3600.0, show_code=code, within=_scope_dirs(window))
+        tree = _model.tree(hours * 3600.0, show_code=code, within=_scope_dirs(window),
+                           hidden=all_hidden())
     items = []
     for node in tree:
         for s in node["sessions"]:

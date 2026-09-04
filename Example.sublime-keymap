@@ -45,6 +45,16 @@
 		"context": [{ "key": "setting.claude_activity_panel", "operator": "equal", "operand": true }]
 	},
 	{
+		"keys": ["h"],
+		"command": "claude_ide_activity_hide",
+		"context": [{ "key": "setting.claude_activity_panel", "operator": "equal", "operand": true }]
+	},
+	{
+		"keys": ["shift+h"],
+		"command": "claude_ide_activity_show_hidden",
+		"context": [{ "key": "setting.claude_activity_panel", "operator": "equal", "operand": true }]
+	},
+	{
 		"keys": ["1"], "command": "claude_ide_activity_set_window", "args": { "hours": 1 },
 		"context": [{ "key": "setting.claude_activity_panel", "operator": "equal", "operand": true }]
 	},

@@ -43,6 +43,11 @@
 		// "all" = every live session's project; "window" = only files under
 		// this window's folders (one Sublime window per project setups).
 		"scope": "all",
+		// Projects to always hide from the panel. Match by directory basename
+		// (e.g. "demo") or by full path. Hide one interactively with the "h"
+		// key inside the panel (that list persists separately and is cleared
+		// with Shift+H / "Show Hidden Projects").
+		"hide_projects": [],
 		"max_files_per_session": 20,
 		// How often to poll the hook log and session list (milliseconds).
 		"poll_ms": 2000,

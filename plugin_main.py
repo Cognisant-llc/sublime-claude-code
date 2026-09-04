@@ -179,6 +179,38 @@ class ClaudeIdeActivityActivateCommand(sublime_plugin.TextCommand):
         return _is_panel(self.view)
 
 
+class ClaudeIdeActivityHideCommand(sublime_plugin.TextCommand):
+    """Hide the project under the caret from the panel (persists)."""
+
+    def run(self, edit, point=None):
+        activity_panel.hide_project_at(self.view, point)
+
+    def is_enabled(self):
+        return _is_panel(self.view)
+
+
+class ClaudeIdeActivityShowHiddenCommand(sublime_plugin.WindowCommand):
+    """Un-hide every project hidden with the hide command."""
+
+    def run(self):
+        activity_panel.unhide_all()
+
+    def is_enabled(self):
+        return activity_panel.is_running()
+
+
+class ClaudeIdeActivityEditHiddenCommand(sublime_plugin.ApplicationCommand):
+    """Open the settings so the always-hidden `hide_projects` list can be edited."""
+
+    def run(self):
+        sublime.run_command("edit_settings", {
+            "base_file": "${packages}/Claude Code IDE/Claude Code IDE.sublime-settings",
+            "default": ('// Settings in here override those in "Claude Code IDE'
+                        '/Claude Code IDE.sublime-settings"\n{\n\t"activity_panel": '
+                        '{\n\t\t"hide_projects": [$0]\n\t}\n}\n'),
+        })
+
+
 class ClaudeIdeActivityQuickCommand(sublime_plugin.WindowCommand):
     """Fuzzy list of recent files (newest first) — no screen space needed."""
 

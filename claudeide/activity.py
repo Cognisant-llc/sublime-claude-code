@@ -164,6 +164,25 @@ def is_watchable_root(root: str) -> bool:
     return bool(tail.strip(os.sep))
 
 
+def is_hidden(root: str, patterns: Iterable[str]) -> bool:
+    """True when ``root`` matches one of the user's hide patterns. A pattern
+    matches by exact path, by path-prefix, or by directory basename — so
+    ``"a0dro"`` hides the home project and ``C:\\...\\demo\\parallel`` hides one
+    tree."""
+    rn = norm(root)
+    base = os.path.basename(os.path.normpath(root)).lower()
+    for p in patterns:
+        p = (p or "").strip()
+        if not p:
+            continue
+        if base == p.lower():
+            return True
+        pn = norm(p)
+        if rn == pn or rn.startswith(pn + os.sep):
+            return True
+    return False
+
+
 def sibling_worktrees(root: str) -> List[str]:
     """``wt-*`` / ``.wt-*`` directories next to ``root`` (this repo's
     worktree naming convention)."""
@@ -357,9 +376,31 @@ class ActivityModel:
         self._edits = []  # type: List[Tuple[float, str, str]]   (ts, sid, norm(path))
         self._bash = {}  # type: Dict[str, List[List[float]]]   sid -> [[start, end|None], ...]
         self._names = {}  # type: Dict[str, str]   sid -> name seen in hook log
-        self._cwds = {}  # type: Dict[str, str]   sid -> cwd seen in hook log
+        self._cwds = {}  # type: Dict[str, str]   sid -> anchor cwd (the open dir)
+        self._authoritative = set()  # type: set   sids whose cwd came from sessions/*.json
 
     # -- sessions --
+
+    def _note_cwd(self, sid: str, cwd: str) -> None:
+        """Record a session's open directory. sessions/*.json is authoritative;
+        for sessions seen only in the hook log, keep the *shallowest* cwd — you
+        cd down into subdirectories, so the shallowest is the open dir."""
+        if not sid or not cwd:
+            return
+        cwd = os.path.normpath(cwd)
+        if sid in self._authoritative:
+            return
+        prev = self._cwds.get(sid)
+        if prev is None or cwd.count(os.sep) < os.path.normpath(prev).count(os.sep):
+            self._cwds[sid] = cwd
+
+    def rebuild_roots(self) -> None:
+        """Roots are exactly the session anchors — never a drifted tool cwd or a
+        directory pulled from the fs log. Rebuilt from scratch so a corrected
+        anchor drops the stale one."""
+        self.roots = RootIndex()
+        for cwd in self._cwds.values():
+            self.roots.add_root(cwd)
 
     def set_sessions(self, live: Dict[str, SessionInfo]) -> None:
         for s in self.sessions.values():
@@ -368,8 +409,9 @@ class ActivityModel:
             s.live = True
             self.sessions[sid] = s
             self._names[sid] = s.name
-            self._cwds[sid] = s.cwd
-            self.roots.add_root(s.cwd)
+            self._cwds[sid] = os.path.normpath(s.cwd)
+            self._authoritative.add(sid)
+        self.rebuild_roots()
 
     def session_label(self, sid: Optional[str]) -> str:
         if not sid:
@@ -388,6 +430,15 @@ class ActivityModel:
             return s.status or "idle"
         return "ended"
 
+    def session_root(self, sid: Optional[str]) -> Optional[str]:
+        """The project root a session belongs to: its open cwd, folded to the
+        registered root (worktree → main repo)."""
+        cwd = self._cwds.get(sid or "")
+        if not cwd:
+            return None
+        where = self.roots.classify(os.path.join(cwd, "\x00"))
+        return where[0] if where else os.path.normpath(cwd)
+
     # -- ingest --
 
     def ingest_hook(self, rec: Dict[str, Any]) -> None:
@@ -397,8 +448,7 @@ class ActivityModel:
         if rec.get("name") and sid:
             self._names[sid] = rec["name"]
         if rec.get("cwd") and sid:
-            self._cwds[sid] = rec["cwd"]
-            self.roots.add_root(rec["cwd"])
+            self._note_cwd(sid, rec["cwd"])
         if ev == "edit" and rec.get("path"):
             path = rec["path"]
             self._edits.append((ts, sid, norm(path)))
@@ -420,11 +470,25 @@ class ActivityModel:
             return
         self._record(path, ts, "fs", None)
 
+    def _resolve_root(self, path: str, sid: Optional[str]) -> Optional[Tuple[str, str, str]]:
+        """(root, worktree_label, rel) for a change: the most specific project
+        root containing it, else the attributing session's anchor (so a file a
+        session wrote outside its own tree still lands under that session)."""
+        where = self.roots.classify(path)
+        if where is not None:
+            return where
+        anchor = self.session_root(sid) if sid else None
+        if not anchor:
+            return None
+        if norm(path).startswith(norm(anchor) + os.sep):
+            return anchor, "", os.path.relpath(path, anchor)
+        return anchor, "", os.path.basename(path)
+
     def _record(self, path: str, ts: float, source: str, sid: Optional[str]) -> None:
         name = os.path.basename(path)
         if is_temp_name(name):
             return
-        where = self.roots.classify(path)
+        where = self._resolve_root(path, sid)
         if where is None:
             return
         root, wt, rel = where
@@ -481,10 +545,21 @@ class ActivityModel:
         return None
 
     def reattribute(self) -> None:
-        """Late hook records may arrive after fs events; retry unattributed."""
-        for ch in self.changes.values():
+        """Rebuild roots from the current anchors, then re-derive every change's
+        project (anchors may have moved as the shallowest cwd was learned) and
+        retry unattributed ones."""
+        self.rebuild_roots()
+        stale = []
+        for key, ch in self.changes.items():
             if ch.sid is None:
-                ch.sid = self._attribute(norm(ch.path), ch.root, ch.ts)
+                ch.sid = self._attribute(key, ch.root, ch.ts)
+            where = self._resolve_root(ch.path, ch.sid)
+            if where is None:
+                stale.append(key)
+                continue
+            ch.root, ch.wt, ch.rel = where
+        for key in stale:
+            del self.changes[key]
 
     def trim(self, keep_seconds: float, now: Optional[float] = None) -> None:
         now = now or time.time()
@@ -500,14 +575,18 @@ class ActivityModel:
 
     def tree(self, window_seconds: float, show_code: bool = False,
              now: Optional[float] = None,
-             within: Optional[Iterable[str]] = None) -> List[Dict[str, Any]]:
+             within: Optional[Iterable[str]] = None,
+             hidden: Optional[Iterable[str]] = None) -> List[Dict[str, Any]]:
         """``[{root, label, latest, count, live, sessions: [{sid, label, status,
         latest, files: [Change]}]}]`` newest first at every level.
         ``within``: only files under one of these directories (a window's
-        folders, for example); None = everything."""
+        folders, for example); None = everything.
+        ``hidden``: project roots the user has hidden (see ``is_hidden``)."""
         now = now or time.time()
         cutoff = now - window_seconds
         scope = [norm(d) + os.sep for d in within] if within is not None else None
+        hide = list(hidden) if hidden else []
+        hide_cache = {}  # type: Dict[str, bool]
         by_root = {}  # type: Dict[str, Dict[str, Any]]
         for ch in self.changes.values():
             if ch.ts < cutoff:
@@ -516,6 +595,13 @@ class ActivityModel:
                 continue
             if scope is not None and not any(norm(ch.path).startswith(d) for d in scope):
                 continue
+            if hide:
+                h = hide_cache.get(ch.root)
+                if h is None:
+                    h = is_hidden(ch.root, hide)
+                    hide_cache[ch.root] = h
+                if h:
+                    continue
             node = by_root.get(ch.root)
             if node is None:
                 node = {"root": ch.root, "label": os.path.basename(ch.root) or ch.root,
@@ -539,7 +625,8 @@ class ActivityModel:
             sessions.sort(key=lambda s: s["latest"], reverse=True)
             node["sessions"] = sessions
             node["live"] = sum(1 for s in self.sessions.values()
-                               if s.live and norm(s.cwd) == norm(node["root"]))
+                               if s.live and norm(self.session_root(s.sid) or s.cwd)
+                               == norm(node["root"]))
             out.append(node)
         out.sort(key=lambda n: n["latest"], reverse=True)
         return out

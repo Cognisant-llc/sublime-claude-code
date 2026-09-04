@@ -23,7 +23,7 @@ from . import diff_view
 
 SETTINGS_FILE = "Claude Code IDE.sublime-settings"
 STATUS_KEY = "zz_claude_ide"
-PLUGIN_VERSION = "0.3.1"
+PLUGIN_VERSION = "0.3.2"
 
 _main_thread = None  # type: Optional[threading.Thread]
 

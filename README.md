@@ -35,6 +35,8 @@ When Claude Code connects (via `/ide` or auto-connect), the plugin provides:
 
 When several Claude sessions work in parallel across projects, the hard part is knowing *what just changed, where, and by which session*. The panel answers that at a glance: recently changed files grouped **project → session → file**, in a pane next to the sidebar, newest first. One click (or Enter) opens the file — in Sublime for text and images, in the OS default app for PDF / Office / video.
 
+A **project is the directory you opened `claude` in** — the session's working directory. A tool call that `cd`s into a subdirectory does not split the project; every session anchors to the one directory it started in (worktrees fold into their main repo). Don't want a project in the list? Press `h` on it to hide it (persists; `Shift+H` restores), or list directories to always hide under `activity_panel.hide_projects` — by basename (`"demo"`) or full path.
+
 By default it lists documents and media only (md, txt, html, pdf, xlsx/docx/pptx, csv, images, video, audio); press `c` to include code files. Files changed since you last looked at the panel are marked `*`; `●`/`○` show which sessions are busy/idle, and worktrees fold into their main repository.
 
 - **What changed** comes from a filesystem watcher over the working directories of live sessions (Windows `ReadDirectoryChangesW`; noisy folders such as `node_modules` are pruned), so files written by shell commands, scripts, or by hand are caught too.
@@ -49,7 +51,7 @@ By default it lists documents and media only (md, txt, html, pdf, xlsx/docx/pptx
 }
 ```
 
-Inside the panel: click / `Enter` open (a project header folds), `r` refresh, `c` toggle code files, `1`–`5` time window (1h / 6h / 24h / 3d / 7d). Command palette: *Recent Activity — Open Panel* and *Quick List* (a fuzzy list when you would rather not spend screen space). Settings live under `activity_panel` (group, minimum width, window, prune list); the two logs are `~/.claude/logs/file-activity*.jsonl`, kept for 7 days. The watcher is Windows-only for now — elsewhere the panel shows hook records only.
+Inside the panel: click / `Enter` open (a project header folds), `r` refresh, `c` toggle code files, `h` hide the project under the caret, `Shift+H` restore all hidden, `1`–`5` time window (1h / 6h / 24h / 3d / 7d). Command palette: *Recent Activity — Open Panel*, *Quick List* (a fuzzy list when you would rather not spend screen space), and *Hide / Show Hidden Projects*. Settings live under `activity_panel` (group, minimum width, window, `hide_projects`, prune list); the two logs are `~/.claude/logs/file-activity*.jsonl`, kept for 7 days. The watcher is Windows-only for now — elsewhere the panel shows hook records only.
 
 ## Install (manual, while in development)
 

@@ -339,3 +339,57 @@ def test_parse_notify_buffer_chain():
     first += b"\0" * ((4 - len(first) % 4) % 4)
     buf = first + entry(0, 1, "new.pptx")
     assert parse_notify_buffer(buf) == [(3, "docs\\a.md"), (1, "new.pptx")]
+
+
+# ---------- session anchoring + hidden ----------
+
+
+def test_session_anchored_to_first_seen_cwd(tmp_path):
+    pj = _root(tmp_path, "gg_ds")
+    sub = os.path.join(pj, "repos", "riku")
+    os.makedirs(sub)
+    m = A.ActivityModel()
+    # first record = the open dir; a later record drifts into a subdirectory
+    m.ingest_hook({"ts": NOW, "ev": "bash_start", "sid": "s1", "cwd": pj})
+    m.ingest_hook({"ts": NOW + 1, "ev": "edit", "sid": "s1", "cwd": sub,
+                   "path": os.path.join(sub, "a.md")})
+    m.reattribute()  # the panel does this every cycle: rebuilds roots from anchors
+    # only the open dir becomes a project; the subdir is not its own group
+    assert m.roots.roots() == [pj]
+    assert m.session_root("s1") == pj
+    tree = m.tree(3600, now=NOW + 2)
+    assert [n["label"] for n in tree] == ["gg_ds"]
+
+
+def test_live_session_cwd_is_authoritative_over_drift(tmp_path):
+    pj = _root(tmp_path, "mbti")
+    sub = os.path.join(pj, "services", "llm")
+    os.makedirs(sub)
+    m = A.ActivityModel()
+    m.set_sessions({"s1": A.SessionInfo("s1", "mbti-cf", pj, "busy")})
+    m.ingest_hook({"ts": NOW, "ev": "edit", "sid": "s1", "cwd": sub,
+                   "path": os.path.join(sub, "x.md")})
+    assert m.roots.roots() == [pj]
+    assert m.session_root("s1") == pj
+
+
+def test_is_hidden_by_basename_and_path(tmp_path):
+    pj = _root(tmp_path, "demo")
+    assert A.is_hidden(pj, ["demo"])
+    assert A.is_hidden(pj, [pj])
+    assert A.is_hidden(os.path.join(pj, "sub"), [pj])
+    assert not A.is_hidden(pj, ["other"])
+    assert not A.is_hidden(pj, ["", None])
+
+
+def test_tree_hidden_filters_projects(tmp_path):
+    m, pj = _model(tmp_path)
+    other = _root(tmp_path, "demo")
+    m.set_sessions({**{s.sid: s for s in m.sessions.values()},
+                    "s3": A.SessionInfo("s3", "demo-x", other, "busy")})
+    m.ingest_hook({"ts": NOW, "ev": "edit", "sid": "s1", "cwd": pj,
+                   "path": os.path.join(pj, "a.md")})
+    m.ingest_hook({"ts": NOW, "ev": "edit", "sid": "s3", "cwd": other,
+                   "path": os.path.join(other, "b.md")})
+    assert {n["label"] for n in m.tree(3600, now=NOW)} == {"gg_ds", "demo"}
+    assert [n["label"] for n in m.tree(3600, now=NOW, hidden=["demo"])] == ["gg_ds"]

@@ -44,6 +44,18 @@
 		"command": "claude_ide_activity_toggle_code"
 	},
 	{
+		"caption": "Claude Code IDE: Recent Activity — Hide Project Under Caret",
+		"command": "claude_ide_activity_hide"
+	},
+	{
+		"caption": "Claude Code IDE: Recent Activity — Show Hidden Projects",
+		"command": "claude_ide_activity_show_hidden"
+	},
+	{
+		"caption": "Claude Code IDE: Recent Activity — Edit Always-Hidden List",
+		"command": "claude_ide_activity_edit_hidden"
+	},
+	{
 		"caption": "Claude Code IDE: Recent Activity — Window 1h",
 		"command": "claude_ide_activity_set_window",
 		"args": { "hours": 1 }

@@ -37,6 +37,8 @@ Claude Code が接続すると（`/ide` または自動接続）:
 
 既定では文書・メディアのみ（md, txt, html, pdf, xlsx/docx/pptx, csv, 画像, 動画, 音声）。`c` でコードも含めます。前回パネルを見てから変わったファイルには `*`、セッションの稼働状態は `●`（busy）/`○`（idle）、worktree は親リポジトリに畳んで表示します。
 
+**PJ 単位は「`claude` を開いたディレクトリ」**（そのセッションの作業ディレクトリ）です。ツール呼び出しがサブディレクトリへ `cd` しても PJ は分裂せず、各セッションは開いた 1 つのディレクトリに束ねられます。不要な PJ はその行で `h` を押すと隠せます（永続・`Shift+H` で復元）。常に隠したいディレクトリは `activity_panel.hide_projects` に basename（例 `"demo"`）かフルパスで指定します。
+
 - **何が変わったか**: 稼働中セッションの作業ディレクトリをファイルシステム監視（Windows `ReadDirectoryChangesW`、`node_modules` 等は除外）。シェルコマンドやスクリプト、手編集による変更も拾います
 - **誰が変えたか**: Claude Code の hook が Edit/Write のパスと Bash の実行区間をセッション別に記録。`~/.claude/settings.json` に一度だけ登録します（macOS/Linux は `py -3` を `python3` に）:
 
@@ -49,7 +51,7 @@ Claude Code が接続すると（`/ide` または自動接続）:
 }
 ```
 
-パネル内の操作: クリック / `Enter` で開く（PJ 行は折り畳み）、`r` 再読込、`c` コード表示切替、`1`〜`5` で期間（1h / 6h / 24h / 3d / 7d）。コマンドパレット: *Recent Activity — Open Panel* と *Quick List*（画面を使いたくない時のあいまい検索一覧）。設定は `activity_panel` ブロック（グループ・最小幅・期間・除外一覧）、ログは `~/.claude/logs/file-activity*.jsonl`（7 日保持）。ファイル監視は現状 Windows のみ（他 OS では hook 記録のみ表示）。
+パネル内の操作: クリック / `Enter` で開く（PJ 行は折り畳み）、`r` 再読込、`c` コード表示切替、`h` カーソル下の PJ を隠す、`Shift+H` で隠した PJ を全復元、`1`〜`5` で期間（1h / 6h / 24h / 3d / 7d）。コマンドパレット: *Recent Activity — Open Panel* / *Quick List*（画面を使いたくない時のあいまい検索一覧）/ *Hide・Show Hidden Projects*。設定は `activity_panel` ブロック（グループ・最小幅・期間・`hide_projects`・除外一覧）、ログは `~/.claude/logs/file-activity*.jsonl`（7 日保持）。ファイル監視は現状 Windows のみ（他 OS では hook 記録のみ表示）。
 
 ## インストール（開発中につき手動）
 

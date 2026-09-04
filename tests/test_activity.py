@@ -373,11 +373,12 @@ def test_live_session_cwd_is_authoritative_over_drift(tmp_path):
     assert m.session_root("s1") == pj
 
 
-def test_is_hidden_by_basename_and_path(tmp_path):
+def test_is_hidden_by_basename_and_exact_path(tmp_path):
     pj = _root(tmp_path, "demo")
     assert A.is_hidden(pj, ["demo"])
     assert A.is_hidden(pj, [pj])
-    assert A.is_hidden(os.path.join(pj, "sub"), [pj])
+    # a nested project is NOT hidden by hiding its container (no prefix match)
+    assert not A.is_hidden(os.path.join(pj, "sub"), [pj])
     assert not A.is_hidden(pj, ["other"])
     assert not A.is_hidden(pj, ["", None])
 

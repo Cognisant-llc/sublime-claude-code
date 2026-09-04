@@ -165,20 +165,20 @@ def is_watchable_root(root: str) -> bool:
 
 
 def is_hidden(root: str, patterns: Iterable[str]) -> bool:
-    """True when ``root`` matches one of the user's hide patterns. A pattern
-    matches by exact path, by path-prefix, or by directory basename — so
-    ``"a0dro"`` hides the home project and ``C:\\...\\demo\\parallel`` hides one
-    tree."""
+    """True when ``root`` matches one of the user's hide patterns, by exact
+    path or by directory basename (``"demo"`` hides a project named demo).
+
+    Matching is deliberately NOT by path-prefix: hiding a project must never
+    also hide the distinct projects nested under it — e.g. hiding a container
+    like ``…\\01_works`` must not sweep away ``…\\01_works\\gg_ds`` and its
+    siblings, which are their own projects the user can hide on their own."""
     rn = norm(root)
     base = os.path.basename(os.path.normpath(root)).lower()
     for p in patterns:
         p = (p or "").strip()
         if not p:
             continue
-        if base == p.lower():
-            return True
-        pn = norm(p)
-        if rn == pn or rn.startswith(pn + os.sep):
+        if base == p.lower() or rn == norm(p):
             return True
     return False
 

@@ -103,7 +103,7 @@ Two ways:
 
 ### What happens when Claude edits a file?
 
-The proposed change opens as a side-by-side diff tab in Sublime. Accept or reject it with the ✓/✗ buttons in the proposal pane (also in the command palette; ready-to-copy key bindings ship in `Example.sublime-keymap`), or edit the proposal by hand before accepting. Claude blocks until you decide — with default permission settings, nothing touches disk without your review.
+The proposed change opens as a side-by-side diff tab in Sublime. Accept or reject it with the ✓/✗ buttons in the proposal pane (also in the command palette; ready-to-copy key bindings ship in `Example.sublime-keymap`), or edit the proposal by hand before accepting. Claude blocks until you decide — with default permission settings, nothing touches disk without your review. The review takes the window to two columns by default; set `diff_layout` to `"split"` to halve only the pane holding the file instead. When the last review closes, the previous layout and every tab's position come back — grids and multi-row layouts included.
 
 ### Can Claude open files to show me its results?
 

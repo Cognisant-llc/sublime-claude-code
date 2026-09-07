@@ -2,10 +2,15 @@
 	// Start the IDE server when Sublime starts.
 	"auto_start": true,
 
-	// Diff review layout mode:
-	// - When true (default): Opens diff in a global two-column layout (original on left, proposal on right)
-	// - When false: Splits the current pane 50/50 horizontally for side-by-side view
+	// Open files that Claude shows (openFile) in a right-hand side group,
+	// keeping your own tabs untouched. Set false to open in the active group.
 	"open_in_side_group": true,
+
+	// Diff review layout: "columns" swaps the window to two columns for the
+	// review (original left, proposal right); "split" halves only the pane
+	// that holds the file. Either way the previous layout and every tab's
+	// position come back when the last review closes — grids included.
+	"diff_layout": "columns",
 
 	// Fixed server port (1024-65535), or null for a random port.
 	// A fixed port lets you set machine-wide env vars once

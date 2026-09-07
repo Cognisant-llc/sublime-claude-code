@@ -2,8 +2,9 @@
 	// Start the IDE server when Sublime starts.
 	"auto_start": true,
 
-	// Open files that Claude shows (openFile) in a right-hand side group,
-	// keeping your own tabs untouched. Set false to open in the active group.
+	// Diff review layout mode:
+	// - When true (default): Opens diff in a global two-column layout (original on left, proposal on right)
+	// - When false: Splits the current pane 50/50 horizontally for side-by-side view
 	"open_in_side_group": true,
 
 	// Fixed server port (1024-65535), or null for a random port.

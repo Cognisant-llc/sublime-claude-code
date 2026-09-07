@@ -452,3 +452,166 @@ def test_trim_bounds_session_maps(tmp_path):
     m.trim(3600, now=NOW)
     assert "old" not in m._cwds and "old" not in m._names
     assert "s1" in m._cwds  # live session kept
+
+
+# ---------- attribution cost + burst gate (0.3.5) ----------
+
+
+def test_attribute_picks_nearest_edit_for_the_same_path(tmp_path):
+    m, pj = _model(tmp_path)
+    f = os.path.join(pj, "a.md")
+    other = os.path.join(pj, "b.md")
+    m.ingest_hook({"ts": NOW, "ev": "edit", "sid": "s1", "cwd": pj, "path": other})
+    m.ingest_hook({"ts": NOW - 4, "ev": "edit", "sid": "s2", "cwd": pj, "path": f})
+    m.ingest_hook({"ts": NOW + 3, "ev": "edit", "sid": "s1", "cwd": pj, "path": f})
+    m.ingest_fs(f, NOW + 4)
+    assert m.changes[A.norm(f)].sid == "s1"  # 1 s away beats 8 s away; b.md never counts
+
+
+def test_bash_attribution_walks_back_only_reachable_spans(tmp_path):
+    m, pj = _model(tmp_path)
+    # an old, closed span far in the past must not match; a later one does
+    m.ingest_hook({"ts": NOW - 5000, "ev": "bash_start", "sid": "s1", "cwd": pj})
+    m.ingest_hook({"ts": NOW - 4990, "ev": "bash_end", "sid": "s1", "cwd": pj})
+    m.ingest_hook({"ts": NOW, "ev": "bash_start", "sid": "s1", "cwd": pj})
+    m.ingest_hook({"ts": NOW + 10, "ev": "bash_end", "sid": "s1", "cwd": pj})
+    f = os.path.join(pj, "out.pdf")
+    m.ingest_fs(f, NOW + 5)
+    assert m.changes[A.norm(f)].sid == "s1"
+    g = os.path.join(pj, "old.pdf")
+    m.ingest_fs(g, NOW - 3000)
+    assert m.changes[A.norm(g)].sid is None
+
+
+def test_reattribute_retries_recent_unattributed_only(tmp_path):
+    m, pj = _model(tmp_path)
+    old = os.path.join(pj, "old.md")
+    new = os.path.join(pj, "new.md")
+    m.ingest_fs(old, NOW - 2 * A.ActivityModel.RETRY_WINDOW)
+    m.ingest_fs(new, NOW - 30)
+    assert m.changes[A.norm(old)].sid is None and m.changes[A.norm(new)].sid is None
+    # a bash span that would cover both arrives late (the hook log lagged)
+    m.ingest_hook({"ts": NOW - 2 * A.ActivityModel.RETRY_WINDOW - 5, "ev": "bash_start",
+                   "sid": "s1", "cwd": pj})
+    m.ingest_hook({"ts": NOW, "ev": "bash_end", "sid": "s1", "cwd": pj})
+    m.reattribute(now=NOW)
+    assert m.changes[A.norm(new)].sid == "s1"
+    assert m.changes[A.norm(old)].sid is None  # outside the retry window: left alone
+
+
+def test_reattribute_reresolves_roots_only_when_anchors_move(tmp_path):
+    pj = _root(tmp_path, "pj")
+    sub = os.path.join(pj, "deep")
+    os.makedirs(sub)
+    m = A.ActivityModel()
+    f = os.path.join(sub, "a.md")
+    m.ingest_hook({"ts": NOW, "ev": "edit", "sid": "s1", "cwd": sub, "path": f})
+    m.reattribute(now=NOW)
+    assert m.changes[A.norm(f)].root == sub
+    assert m._anchors_changed() is False  # settled: the next cycle skips the resolve pass
+    m.ingest_hook({"ts": NOW + 1, "ev": "bash_start", "sid": "s1", "cwd": pj})  # shallower
+    m.reattribute(now=NOW + 1)
+    ch = m.changes[A.norm(f)]
+    assert ch.root == pj and ch.rel == os.path.join("deep", "a.md")
+
+
+def test_burst_gate_drops_storm_batches_until_quiet():
+    g = A.BurstGate(threshold=100, quiet=5.0)
+    assert g.batch("pj|", 39, NOW) is True  # the busiest genuine output seen
+    assert g.batch("pj|", 830, NOW + 1) is False  # a worktree rebase
+    assert g.batch("pj|", 3, NOW + 3) is False  # the storm's tail is still dropped
+    assert g.batch("other|", 3, NOW + 3) is True  # other projects are unaffected
+    assert g.batch("pj|", 2, NOW + 3 + 5.1) is True  # quiet again
+    assert g.total_dropped() == 833 and g.dropped == {"pj|": 833}
+
+
+def test_storm_buckets_and_burst_key(tmp_path):
+    pj = _root(tmp_path, "pj")
+    wt = os.path.join(str(tmp_path), ".wt-feature")
+    os.makedirs(wt)
+    roots = A.RootIndex()
+    roots.add_root(pj)
+    roots._register_wt(wt, pj)
+    assert A.burst_key(os.path.join(pj, "a.md"), roots) == A.norm(pj) + "|"
+    assert A.burst_key(os.path.join(wt, "a.md"), roots) == A.norm(pj) + "|.wt-feature"
+    assert A.burst_key(r"C:\x\y\z\w\v.md", roots) == A.norm(r"C:\x\y\z")
+    recs = [{"ts": NOW + i * 0.01, "path": os.path.join(wt, f"{i}.md")} for i in range(150)]
+    recs += [{"ts": NOW + 0.5, "path": os.path.join(pj, "real.md")}]
+    recs += [{"ts": NOW + 20, "path": os.path.join(wt, "later.md")}]
+    storms = A.storm_buckets(recs, lambda p: A.burst_key(p, roots), window=10, threshold=100)
+    assert storms == {(A.norm(pj) + "|.wt-feature", int(NOW // 10))}
+    key = lambda r: (A.burst_key(r["path"], roots), int(r["ts"] // 10))  # noqa: E731
+    assert key(recs[-1]) not in storms and key(recs[-2]) not in storms
+
+
+# ---------- fit to view (0.3.5) ----------
+
+
+def _big_tree(tmp_path, n_pj=3, n_sessions=2, n_files=6):
+    """n_pj projects × n_sessions sessions × n_files files, newest project first."""
+    m = A.ActivityModel()
+    live = {}
+    for p in range(n_pj):
+        pj = _root(tmp_path, f"pj{p}")
+        for s in range(n_sessions):
+            sid = f"p{p}s{s}"
+            live[sid] = A.SessionInfo(sid, sid, pj, "idle")
+    m.set_sessions(live)
+    for p in range(n_pj):
+        pj = os.path.join(str(tmp_path), f"pj{p}")
+        for s in range(n_sessions):
+            for f in range(n_files):
+                ts = NOW - p * 1000 - s * 100 - f  # newest project/session/file first
+                m.ingest_hook({"ts": ts, "ev": "edit", "sid": f"p{p}s{s}", "cwd": pj,
+                               "path": os.path.join(pj, f"s{s}f{f}.md")})
+    return m, m.tree(3600, now=NOW + 1)
+
+
+def test_plan_lines_unlimited_gives_every_session_the_cap(tmp_path):
+    m, tree = _big_tree(tmp_path)
+    quota, auto = A.plan_lines(tree, [], [], max_files=4, max_lines=None)
+    assert auto == set() and set(quota.values()) == {4}
+
+
+def test_plan_lines_round_robin_shows_every_session_first(tmp_path):
+    m, tree = _big_tree(tmp_path)  # 3 pj × 2 sessions × 6 files
+    # rows: header 2 + 3×(2 + 2×3) = 26 fixed; +4 rows = a second file for 4 sessions
+    quota, auto = A.plan_lines(tree, [], [], max_files=20, max_lines=30)
+    assert auto == set()
+    per = [quota[(A.norm(n["root"]), s["sid"])] for n in tree for s in n["sessions"]]
+    assert per == [2, 2, 2, 2, 1, 1]  # newest sessions got their second file first
+    text, targets = A.render(tree, [], NOW, now=NOW, width=40, max_lines=30, header="h")
+    assert len(text.rstrip("\n").split("\n")) <= 30
+    assert text.count("… +") == 6  # every session still says how much is hidden
+
+
+def test_plan_lines_folds_oldest_projects_when_rows_do_not_fit(tmp_path):
+    m, tree = _big_tree(tmp_path)  # fixed rows = 24 without header
+    quota, auto = A.plan_lines(tree, [], [], max_files=20, max_lines=18, header=False)
+    assert auto == {A.norm(tree[-1]["root"])}  # only the oldest folded: 16 + 1 = 17 ≤ 18
+    text, targets = A.render(tree, [], NOW, now=NOW, width=40, max_lines=18, header="")
+    assert "▷ pj2" in text and "▼ pj1" in text and "▼ pj0" in text
+    assert len(text.rstrip("\n").split("\n")) <= 18
+    kinds = {t[1]: t[0] for t in targets.values() if t[0].startswith("pj")}
+    assert kinds[tree[-1]["root"]] == "pj-auto" and kinds[tree[0]["root"]] == "pj"
+
+
+def test_plan_lines_focus_is_filled_first_and_exempt_from_folding(tmp_path):
+    m, tree = _big_tree(tmp_path)
+    oldest = tree[-1]["root"]
+    quota, auto = A.plan_lines(tree, [], [oldest], max_files=20, max_lines=18, header=False)
+    assert A.norm(oldest) not in auto and auto == {A.norm(tree[-2]["root"])}
+    quota, auto = A.plan_lines(tree, [], [oldest], max_files=3, max_lines=30, header=False)
+    focused = [quota[(A.norm(oldest), s["sid"])] for s in tree[-1]["sessions"]]
+    assert focused == [3, 3]  # the cap, before anyone else gets a second file
+    text, _ = A.render(tree, [], NOW, now=NOW, width=40, max_lines=30, focus=[oldest])
+    assert "◆ pj2" in text
+
+
+def test_manual_collapse_costs_one_row_and_is_never_auto(tmp_path):
+    m, tree = _big_tree(tmp_path)
+    newest = tree[0]["root"]
+    quota, auto = A.plan_lines(tree, [newest], [], max_files=20, max_lines=13, header=False)
+    assert A.norm(newest) not in {k[0] for k in quota} and A.norm(newest) not in auto
+    text, targets = A.render(tree, [newest], NOW, now=NOW, width=40, max_lines=13, header="")
+    assert "▶ pj0" in text and len(text.rstrip("\n").split("\n")) <= 13

@@ -48,7 +48,13 @@
 		// key inside the panel (that list persists separately and is cleared
 		// with Shift+H / "Show Hidden Projects").
 		"hide_projects": [],
+		// Ceiling per session; with fit_to_view the actual number is derived
+		// from the pane height so every project stays visible without scrolling.
 		"max_files_per_session": 20,
+		// Fit the whole tree to the pane: newest file of every session first
+		// (round-robin), oldest projects folded when even the rows don't fit
+		// (▷ — click to focus one project and expand it fully, ◆).
+		"fit_to_view": true,
 		// How often to poll the hook log and session list (milliseconds).
 		"poll_ms": 2000,
 		// Records older than this are dropped from the logs on start.

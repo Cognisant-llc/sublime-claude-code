@@ -124,17 +124,23 @@ class Watcher:
 
     ``callback(path, ts, action)`` runs on the watcher's own timer thread.
     ``should_ignore(root, relpath)`` lets the caller prune noisy subtrees
-    before any coalescing work is done.
+    before any coalescing work is done. ``batch_filter(events)`` sees each
+    flush batch ``[(path, ts, action)]`` whole and returns the events to
+    deliver — the hook for dropping storms (a git checkout rewriting hundreds
+    of files) that only a batch, not a single event, can reveal.
     """
 
     def __init__(self, callback: Callable[[str, float, str], None],
                  should_ignore: Optional[Callable[[str, str], bool]] = None,
                  quiet_seconds: float = 0.8,
-                 on_error: Optional[Callable[[str, str], None]] = None) -> None:
+                 on_error: Optional[Callable[[str, str], None]] = None,
+                 batch_filter: Optional[Callable[[List[Tuple[str, float, str]]],
+                                                 List[Tuple[str, float, str]]]] = None) -> None:
         self._cb = callback
         self._ignore = should_ignore or (lambda root, rel: False)
         self._quiet = quiet_seconds
         self._on_error = on_error or (lambda root, msg: None)
+        self._batch_filter = batch_filter
         self._readers = {}  # type: Dict[str, _RootReader]
         self._pending = {}  # type: Dict[str, Tuple[float, str, str]]   norm -> (ts, path, action)
         self._lock = threading.Lock()
@@ -201,6 +207,11 @@ class Watcher:
                     if now - ts >= self._quiet:
                         due.append((path, ts, action))
                         del self._pending[key]
+            if due and self._batch_filter is not None:
+                try:
+                    due = self._batch_filter(due)
+                except Exception as exc:  # noqa: BLE001 - keep the loop alive
+                    self._on_error("", f"batch filter failed: {exc}")
             for path, ts, action in due:
                 if action != "removed":
                     if os.path.isdir(path):

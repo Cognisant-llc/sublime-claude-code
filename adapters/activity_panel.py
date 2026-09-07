@@ -35,6 +35,7 @@ DEFAULTS = {
     "scope": "all",
     "hide_projects": [],
     "max_files_per_session": 20,
+    "fit_to_view": True,
     "poll_ms": 2000,
     "keep_days": 7,
     "prune": A.DEFAULT_PRUNE,
@@ -51,6 +52,7 @@ COMPACT_EVERY = 1800.0
 _lock = threading.RLock()
 _model = None  # type: A.ActivityModel
 _watcher = None  # type: fswatch.Watcher
+_gate = None  # type: A.BurstGate
 _hook_offset = 0
 _running = False
 _dirty = False
@@ -131,7 +133,7 @@ def _log(msg):
 
 
 def start():
-    global _model, _watcher, _hook_offset, _running
+    global _model, _watcher, _gate, _hook_offset, _running
     c = conf()
     if not c["enabled"]:
         return
@@ -140,15 +142,18 @@ def start():
             return
         _running = True
         _model = A.ActivityModel(prune=c["prune"])
-        _compact_logs(float(c["keep_days"]) * 86400.0)
+        _gate = A.BurstGate()
+        keep = float(c["keep_days"]) * 86400.0
+        _compact_hook_log(keep)
         _model.set_sessions(A.load_sessions(sessions_dir()))
         _hook_offset = 0
         _ingest_hook_log()
         _model.rebuild_roots()  # anchors from the hook log before fs backfill
+        _compact_fs_log(keep)  # after the roots exist: storms are keyed by project
         _backfill_fs_log()
         _model.reattribute()
         _watcher = fswatch.Watcher(_on_fs_change, should_ignore=_should_ignore,
-                                   on_error=_on_watch_error)
+                                   on_error=_on_watch_error, batch_filter=_batch_filter)
         _watcher.set_roots(_model.roots.watch_dirs())
     sublime.set_timeout(_tick, int(c["poll_ms"]))
     if c["auto_open"]:
@@ -183,38 +188,87 @@ def _ingest_hook_log():
 
 
 def _compact_logs(keep_seconds):
-    """Bound both logs by age and count. The fs log is additionally filtered to
-    default-view records (A.is_fs_loggable), which is what physically removes
-    legacy system churn from an existing file. Runs under _lock; the hook tail
-    offset is reset to the compacted size so nothing is re-ingested."""
+    """Bound both logs by age and count (periodic; see the two halves)."""
+    _compact_hook_log(keep_seconds)
+    _compact_fs_log(keep_seconds)
+
+
+def _compact_hook_log(keep_seconds):
+    """Runs under _lock; the hook tail offset is reset to the compacted size so
+    nothing is re-ingested."""
     global _hook_offset, _last_compact
-    for p in (hook_log_path(), fs_log_path()):
-        if not os.path.exists(p):
-            continue
+    p = hook_log_path()
+    if os.path.exists(p):
         try:
-            pred = (lambda r: A.is_fs_loggable(r.get("path", ""))) if p == fs_log_path() else None
-            A.compact_log(p, keep_seconds, max_records=MAX_LOG_RECORDS, keep_pred=pred)
+            A.compact_log(p, keep_seconds, max_records=MAX_LOG_RECORDS)
         except OSError as exc:
             _log(f"compact failed: {exc}")
     try:
-        _hook_offset = os.path.getsize(hook_log_path())
+        _hook_offset = os.path.getsize(p)
     except OSError:
         _hook_offset = 0
     _last_compact = time.time()
 
 
-def _backfill_fs_log():
+def _burst_key(path):
+    return A.burst_key(path, _model.roots)
+
+
+def _fs_keep_pred():
+    """Which fs-log records survive a compaction or a backfill: default-view
+    records (A.is_fs_loggable — what physically removes legacy system churn)
+    that are not part of a storm (a git checkout that rewrote hundreds of
+    documents in one time bucket; see A.storm_buckets)."""
     records, _ = A.read_log_tail(fs_log_path(), 0)
+    storms = A.storm_buckets(records, _burst_key)
+
+    def keep(rec):
+        path = rec.get("path", "")
+        if rec.get("ev") != "fs" or not path or not A.is_fs_loggable(path):
+            return False
+        return (_burst_key(path), int(float(rec.get("ts", 0)) // A.BURST_WINDOW)) not in storms
+    return keep
+
+
+def _compact_fs_log(keep_seconds):
+    p = fs_log_path()
+    if not os.path.exists(p):
+        return
+    try:
+        A.compact_log(p, keep_seconds, max_records=MAX_LOG_RECORDS, keep_pred=_fs_keep_pred())
+    except OSError as exc:
+        _log(f"compact failed: {exc}")
+
+
+def _backfill_fs_log():
+    # roots come only from session anchors (rebuild_roots ran before this);
+    # a change outside any anchor is picked up once its session is attributed
+    records, _ = A.read_log_tail(fs_log_path(), 0)
+    keep = _fs_keep_pred()
     for rec in records:
-        path = rec.get("path")
-        if rec.get("ev") != "fs" or not path:
-            continue
-        # defensive: ignore any legacy non-default-view line still present.
-        # roots come only from session anchors (rebuild_roots ran before this);
-        # a change outside any anchor is picked up once its session is attributed
-        if not A.is_fs_loggable(path):
-            continue
-        _model.ingest_fs(path, float(rec["ts"]), rec.get("action", "modified"))
+        if keep(rec):
+            _model.ingest_fs(rec["path"], float(rec["ts"]), rec.get("action", "modified"))
+
+
+def _batch_filter(due):
+    """Watcher thread: drop a flush batch that is a storm for its project (a
+    git checkout / rebase rewriting hundreds of files), per A.BurstGate."""
+    global _dirty
+    groups = {}
+    with _lock:
+        if not _running:
+            return []
+        for item in due:
+            groups.setdefault(_burst_key(item[0]), []).append(item)
+        now = time.time()
+        kept = []
+        for key, items in groups.items():
+            if _gate.batch(key, len(items), now):
+                kept.extend(items)
+            else:
+                _dirty = True  # the header shows the running total
+                _log(f"burst: dropped {len(items)} events in {key}")
+    return kept
 
 
 def _should_ignore(root, rel):
@@ -284,7 +338,8 @@ def _tick():
             view = find_panel(window)
             if view is None:
                 continue
-            if view.settings().get("claude_activity_width") != _text_width(view):
+            if (view.settings().get("claude_activity_width") != _text_width(view)
+                    or view.settings().get("claude_activity_lines") != _text_lines(view)):
                 changed = True
                 break
     if changed:
@@ -306,6 +361,7 @@ def _panel_state(view):
     st = view.settings().get(STATE_SETTING) or {}
     return {
         "collapsed": list(st.get("collapsed", [])),
+        "focus": list(st.get("focus", [])),
         "show_code": bool(st.get("show_code", conf()["show_code"])),
         "window_hours": float(st.get("window_hours", conf()["window_hours"])),
         "last_seen": float(st.get("last_seen", 0.0)),
@@ -460,6 +516,21 @@ def _text_width(view):
     return 40
 
 
+def _text_lines(view):
+    """Rows that fit the viewport (the fit-to-view line budget), or None when
+    the user turned fitting off or the view has no size yet."""
+    if not conf().get("fit_to_view", True):
+        return None
+    try:
+        h = view.viewport_extent()[1]
+        lh = view.line_height()
+        if h > 0 and lh > 0:
+            return max(8, int(h // lh))
+    except Exception:  # noqa: BLE001
+        pass
+    return None
+
+
 def render_view(view):
     if _model is None or not view.is_valid():
         return
@@ -473,14 +544,19 @@ def render_view(view):
         live = sum(1 for s in _model.sessions.values() if s.live)
     hours = st["window_hours"]
     span = f"{hours:g}h" if hours < 48 else f"{hours / 24.0:g}d"
-    header = "{}  ·  {}{}{}".format(
+    burst = _gate.total_dropped() if _gate is not None else 0
+    header = "{}  ·  {}{}{}{}".format(
         span, "all files" if st["show_code"] else "docs & media",
         f"  ·  {len(hidden)} hidden" if hidden else "",
+        f"  ·  ⚡{burst} burst" if burst else "",
         "  ·  ⚠ " + _last_error if _last_error else "")
     width = _text_width(view)
+    max_lines = _text_lines(view)
     text, targets = A.render(tree, st["collapsed"], st["last_seen"], width=width,
-                             max_files=int(c["max_files_per_session"]), header=header)
+                             max_files=int(c["max_files_per_session"]), header=header,
+                             max_lines=max_lines, focus=st["focus"])
     view.settings().set("claude_activity_width", width)
+    view.settings().set("claude_activity_lines", max_lines)
     view.settings().set("claude_activity_targets",
                         {str(k): list(v) for k, v in targets.items()})
     if view.substr(sublime.Region(0, view.size())) == text:
@@ -556,8 +632,19 @@ def activate(view, point=None):
     if _last_activation[0] == target and now - _last_activation[1] < 0.7:
         return
     _last_activation = (target, now)
+    if kind == "pj-auto":
+        # folded only to fit the view: a click focuses it (expands it fully)
+        st = _panel_state(view)
+        _set_panel_state(view, focus=st["focus"] + [target])
+        render_view(view)
+        return
     if kind == "pj":
         st = _panel_state(view)
+        focus = [f for f in st["focus"] if A.norm(f) != A.norm(target)]
+        if len(focus) != len(st["focus"]):
+            _set_panel_state(view, focus=focus)  # focused → back to the shared budget
+            render_view(view)
+            return
         collapsed = [c for c in st["collapsed"] if A.norm(c) != A.norm(target)]
         if len(collapsed) == len(st["collapsed"]):
             collapsed.append(target)

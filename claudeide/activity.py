@@ -19,7 +19,7 @@ import os
 import re
 import time
 import unicodedata
-from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Optional, Set, Tuple
 
 # ---------- classification ----------
 
@@ -95,6 +95,73 @@ def is_fs_loggable(path: str) -> bool:
     if ext_class(path) == "code":
         return False
     return not any(seg in NOISE_SEGMENTS for seg in norm(path).split(os.sep))
+
+
+# ---------- burst gate ----------
+
+# A git checkout / rebase / stash that rewrites hundreds of files in a second
+# is not "a session changed these files". Measured on a real machine: a
+# worktree rebase touches ~830 documents inside one 10 s bucket, while the
+# busiest genuine session output was 39 in 10 s.
+BURST_WINDOW = 10.0  # seconds a burst is measured over
+BURST_THRESHOLD = 100  # more events than this per key and window = a storm
+BURST_QUIET = 5.0  # a storm ends after this much silence
+
+
+def burst_key(path: str, roots: "RootIndex") -> str:
+    """The unit a storm is counted in: the project root plus worktree label,
+    or (path not under any root) its first four segments."""
+    where = roots.classify(path)
+    if where is not None:
+        return norm(where[0]) + "|" + where[1].lower()
+    return os.sep.join(norm(path).split(os.sep)[:4])
+
+
+class BurstGate:
+    """Live storm detector for the watcher's flush batches. ``batch(key, n,
+    now)`` says whether a batch of ``n`` events for ``key`` passes: a batch
+    over the threshold opens a storm for that key and is dropped whole, and
+    every further batch is dropped until ``quiet`` seconds pass without one.
+    Time-injected and pure so it is testable."""
+
+    def __init__(self, threshold: int = BURST_THRESHOLD, quiet: float = BURST_QUIET) -> None:
+        self.threshold = threshold
+        self.quiet = quiet
+        self._storm_until = {}  # type: Dict[str, float]
+        self.dropped = {}  # type: Dict[str, int]
+
+    def batch(self, key: str, n: int, now: float) -> bool:
+        until = self._storm_until.get(key)
+        if until is not None and now < until:
+            self._storm_until[key] = now + self.quiet
+            self.dropped[key] = self.dropped.get(key, 0) + n
+            return False
+        if n > self.threshold:
+            self._storm_until[key] = now + self.quiet
+            self.dropped[key] = self.dropped.get(key, 0) + n
+            return False
+        self._storm_until.pop(key, None)
+        return True
+
+    def total_dropped(self) -> int:
+        return sum(self.dropped.values())
+
+
+def storm_buckets(records: Iterable[Dict[str, Any]], key_of: Callable[[str], str],
+                  window: float = BURST_WINDOW,
+                  threshold: int = BURST_THRESHOLD) -> Set[Tuple[str, int]]:
+    """Offline twin of BurstGate for replaying a log: the ``(key, bucket)``
+    pairs whose event count exceeds ``threshold`` within one ``window``-sized
+    time bucket. A record is a storm record when
+    ``(key_of(path), int(ts // window))`` is in the result."""
+    counts = {}  # type: Dict[Tuple[str, int], int]
+    for rec in records:
+        path = rec.get("path")
+        if not path:
+            continue
+        k = (key_of(path), int(float(rec.get("ts", 0)) // window))
+        counts[k] = counts.get(k, 0) + 1
+    return {k for k, n in counts.items() if n > threshold}
 
 
 # ---------- sessions ----------
@@ -404,8 +471,13 @@ class ActivityModel:
         self.roots = RootIndex()
         self.sessions = {}  # type: Dict[str, SessionInfo]
         self.changes = {}  # type: Dict[str, Change]   norm(path) -> latest
-        self._edits = []  # type: List[Tuple[float, str, str]]   (ts, sid, norm(path))
+        self._edits = {}  # type: Dict[str, List[Tuple[float, str]]]   norm(path) -> [(ts, sid)]
         self._bash = {}  # type: Dict[str, List[List[float]]]   sid -> [[start, end|None], ...]
+        # sids whose cwd relates to a project root, cached per root_n; cleared
+        # whenever an anchor changes (see _anchors_changed)
+        self._root_sids = {}  # type: Dict[str, List[str]]
+        self._anchor_sig = None  # type: Optional[frozenset]
+        self._longest_bash = 0.0  # longest closed Bash span seen (bounds the walk-back)
         self._names = {}  # type: Dict[str, str]   sid -> name seen in hook log
         self._cwds = {}  # type: Dict[str, str]   sid -> anchor cwd (the open dir)
         self._authoritative = set()  # type: set   sids whose cwd came from sessions/*.json
@@ -424,6 +496,7 @@ class ActivityModel:
         prev = self._cwds.get(sid)
         if prev is None or cwd.count(os.sep) < os.path.normpath(prev).count(os.sep):
             self._cwds[sid] = cwd
+            self._root_sids.clear()
 
     def rebuild_roots(self) -> None:
         """Roots are exactly the session anchors — never a drifted tool cwd or a
@@ -432,6 +505,16 @@ class ActivityModel:
         self.roots = RootIndex()
         for cwd in self._cwds.values():
             self.roots.add_root(cwd)
+        self._root_sids.clear()
+
+    def _anchors_changed(self) -> bool:
+        """True once per change of the anchor set (sid → cwd), so callers can
+        skip re-deriving every change's project when nothing moved."""
+        sig = frozenset(self._cwds.items())
+        if sig == self._anchor_sig:
+            return False
+        self._anchor_sig = sig
+        return True
 
     def set_sessions(self, live: Dict[str, SessionInfo]) -> None:
         for s in self.sessions.values():
@@ -480,9 +563,11 @@ class ActivityModel:
             self._names[sid] = rec["name"]
         if rec.get("cwd") and sid:
             self._note_cwd(sid, rec["cwd"])
+        if ev in ("bash_start", "bash_end") and sid not in self._bash:
+            self._root_sids.clear()  # a new session joins the per-root candidates
         if ev == "edit" and rec.get("path"):
             path = rec["path"]
-            self._edits.append((ts, sid, norm(path)))
+            self._edits.setdefault(norm(path), []).append((ts, sid))
             self._record(path, ts, "edit", sid)
         elif ev == "bash_start":
             self._bash.setdefault(sid, []).append([ts, None])
@@ -491,6 +576,7 @@ class ActivityModel:
             for span in reversed(spans):
                 if span[1] is None:
                     span[1] = ts
+                    self._longest_bash = max(self._longest_bash, ts - span[0])
                     break
             else:
                 spans.append([ts - 1.0, ts])
@@ -545,26 +631,40 @@ class ActivityModel:
 
     # -- attribution --
 
+    def _sids_for_root(self, root_n: str) -> List[str]:
+        """Sessions whose anchor is this root, inside it, or above it."""
+        got = self._root_sids.get(root_n)
+        if got is None:
+            got = []
+            for sid in self._bash:
+                cwd = self._cwds.get(sid) or ""
+                cwd_n = norm(cwd) if cwd else ""
+                if cwd_n and (cwd_n == root_n or cwd_n.startswith(root_n + os.sep)
+                              or root_n.startswith(cwd_n + os.sep)):
+                    got.append(sid)
+            self._root_sids[root_n] = got
+        return got
+
     def _attribute(self, key: str, root: str, ts: float) -> Optional[str]:
         # 1. an Edit/Write hook record for the same file around the same time
         best = None  # type: Optional[Tuple[float, str]]
-        for ets, sid, epath in self._edits:
-            if epath == key:
-                d = abs(ets - ts)
-                if d <= self.EDIT_MATCH_WINDOW and (best is None or d < best[0]):
-                    best = (d, sid)
+        for ets, sid in self._edits.get(key, ()):
+            d = abs(ets - ts)
+            if d <= self.EDIT_MATCH_WINDOW and (best is None or d < best[0]):
+                best = (d, sid)
         if best:
             return best[1]
-        # 2. a Bash call of a session working in this project, running at ts
+        # 2. a Bash call of a session working in this project, running at ts.
+        # Spans are appended in start order, so walk back from the newest and
+        # stop once no span (open ones last at most BASH_OPEN_CAP, closed ones
+        # at most the longest seen) can still reach ts.
         root_n = norm(root)
+        horizon = ts - self.BASH_SLACK - max(self.BASH_OPEN_CAP, self._longest_bash)
         hits = []
-        for sid, spans in self._bash.items():
-            cwd = self._cwds.get(sid) or ""
-            cwd_n = norm(cwd) if cwd else ""
-            if not cwd_n or not (cwd_n == root_n or cwd_n.startswith(root_n + os.sep)
-                                 or root_n.startswith(cwd_n + os.sep)):
-                continue
-            for start, end in spans:
+        for sid in self._sids_for_root(root_n):
+            for start, end in reversed(self._bash.get(sid, ())):
+                if start < horizon:
+                    break
                 stop = end if end is not None else start + self.BASH_OPEN_CAP
                 if start - self.BASH_SLACK <= ts <= stop + self.BASH_SLACK:
                     hits.append(sid)
@@ -578,15 +678,25 @@ class ActivityModel:
                 return exact[0]
         return None
 
-    def reattribute(self) -> None:
-        """Rebuild roots from the current anchors, then re-derive every change's
-        project (anchors may have moved as the shallowest cwd was learned) and
-        retry unattributed ones."""
+    # Hook records arrive within seconds of the tool call, so an fs change
+    # still unattributed after this long will never find its session: retry
+    # only the recent ones instead of rescanning every change each cycle.
+    RETRY_WINDOW = 600.0
+
+    def reattribute(self, now: Optional[float] = None) -> None:
+        """Retry attribution for recent unattributed changes, and — only when
+        an anchor moved (the shallowest cwd was learned, a session appeared) —
+        rebuild roots and re-derive every change's project."""
+        now = now or time.time()
+        cutoff = now - self.RETRY_WINDOW
+        for key, ch in self.changes.items():
+            if ch.sid is None and ch.ts >= cutoff:
+                ch.sid = self._attribute(key, ch.root, ch.ts)
+        if not self._anchors_changed():
+            return
         self.rebuild_roots()
         stale = []
         for key, ch in self.changes.items():
-            if ch.sid is None:
-                ch.sid = self._attribute(key, ch.root, ch.ts)
             where = self._resolve_root(ch.path, ch.sid)
             if where is None:
                 stale.append(key)
@@ -599,7 +709,9 @@ class ActivityModel:
         now = now or time.time()
         cutoff = now - keep_seconds
         self.changes = {k: c for k, c in self.changes.items() if c.ts >= cutoff}
-        self._edits = [e for e in self._edits if e[0] >= cutoff]
+        self._edits = {k: kept for k, kept in
+                       ((k, [e for e in es if e[0] >= cutoff]) for k, es in self._edits.items())
+                       if kept}
         for sid in list(self._bash):
             self._bash[sid] = [s for s in self._bash[sid] if (s[1] or s[0]) >= cutoff]
             if not self._bash[sid]:
@@ -615,6 +727,7 @@ class ActivityModel:
                 self._names.pop(sid, None)
                 self._authoritative.discard(sid)
                 self.sessions.pop(sid, None)
+                self._root_sids.clear()
 
     # -- tree --
 
@@ -739,13 +852,96 @@ def elide_rel(rel: str, width: int) -> str:
     return "/".join(["…"] + tail + [name])
 
 
+def plan_lines(tree: List[Dict[str, Any]], collapsed: Iterable[str], focus: Iterable[str],
+               max_files: int, max_lines: Optional[int],
+               header: bool = True) -> Tuple[Dict[Tuple[str, str], int], Set[str]]:
+    """How many files each session shows so the whole tree fits ``max_lines``
+    rows — the cross-project overview never scrolls away.
+
+    * every project keeps its title row;
+    * focused projects are filled up to ``max_files`` first;
+    * the rest get their newest file one at a time, round-robin in display
+      order (newest project, newest session first), so each session's latest
+      activity shows before any session's second file;
+    * when even the project and session rows do not fit, the oldest unfocused
+      projects are auto-collapsed (a click focuses them).
+
+    Line costs: collapsed project 1; open project 2 (title + blank) plus, per
+    session, its label, its newest file and a "+N more" row when it has more;
+    granting a session one more file costs 1, or 0 when that completes the
+    session (the "+N more" row becomes the file row). ``max_lines`` None =
+    unlimited.
+    Returns ``({(norm(root), sid_key): files}, {norm(root) auto-collapsed})``.
+    """
+    collapsed_n = {norm(c) for c in collapsed}
+    focus_n = {norm(f) for f in focus}
+    budget = (max_lines if max_lines is not None else 10 ** 9) - (2 if header else 0)
+    open_nodes = [n for n in tree if norm(n["root"]) not in collapsed_n]
+
+    def cost(node: Dict[str, Any]) -> int:
+        return 2 + sum(3 if len(s["files"]) > 1 else 2 for s in node["sessions"])
+
+    fixed = (len(tree) - len(open_nodes)) + sum(cost(n) for n in open_nodes)
+    auto = set()  # type: Set[str]
+    for node in reversed(open_nodes):  # oldest first
+        if fixed <= budget:
+            break
+        root_n = norm(node["root"])
+        if root_n in focus_n:
+            continue
+        auto.add(root_n)
+        fixed -= cost(node) - 1
+    sessions = []  # type: List[Tuple[Tuple[str, str], int, bool]]
+    for node in open_nodes:
+        root_n = norm(node["root"])
+        if root_n in auto:
+            continue
+        for s in node["sessions"]:
+            sessions.append(((root_n, s["sid"] or ""), len(s["files"]), root_n in focus_n))
+    quota = {k: 1 for k, _n, _f in sessions}  # the newest file is part of the base cost
+    used = fixed
+
+    def grant(key: Tuple[str, str], n: int) -> Optional[int]:
+        q = quota[key]
+        if q >= min(n, max_files):
+            return None
+        return 0 if q + 1 == n else 1
+
+    for key, n, focused in sessions:
+        while focused:
+            c = grant(key, n)
+            if c is None or used + c > budget:
+                break
+            quota[key] += 1
+            used += c
+    progress = True
+    while progress:
+        progress = False
+        for key, n, focused in sessions:
+            if focused:
+                continue
+            c = grant(key, n)
+            if c is None or used + c > budget:
+                continue
+            quota[key] += 1
+            used += c
+            progress = True
+    return quota, auto
+
+
 def render(tree: List[Dict[str, Any]], collapsed: Iterable[str], last_seen: float,
            width: int = 46, max_files: int = 20, now: Optional[float] = None,
-           header: str = "") -> Tuple[str, Dict[int, Tuple[str, str]]]:
+           header: str = "", max_lines: Optional[int] = None,
+           focus: Iterable[str] = ()) -> Tuple[str, Dict[int, Tuple[str, str]]]:
     """Render the tree to text. Returns ``(text, {line_no: (kind, target)})``
-    where kind is ``'file'`` (target=absolute path) or ``'pj'`` (target=root)."""
+    where kind is ``'file'`` (target=absolute path), ``'pj'`` (target=root;
+    click toggles collapse / drops focus) or ``'pj-auto'`` (a project folded to
+    fit the view; click focuses it). Arrows: ▼ open, ◆ focused, ▶ collapsed
+    by hand, ▷ folded automatically."""
     now = now or time.time()
     collapsed_n = {norm(c) for c in collapsed}
+    focus_n = {norm(f) for f in focus}
+    quota, auto = plan_lines(tree, collapsed, focus, max_files, max_lines, header=bool(header))
     lines = []  # type: List[str]
     targets = {}  # type: Dict[int, Tuple[str, str]]
     if header:
@@ -754,28 +950,31 @@ def render(tree: List[Dict[str, Any]], collapsed: Iterable[str], last_seen: floa
     if not tree:
         lines.append("  (no recent changes)")
     for node in tree:
-        is_collapsed = norm(node["root"]) in collapsed_n
-        arrow = "▶" if is_collapsed else "▼"
+        root_n = norm(node["root"])
+        is_collapsed = root_n in collapsed_n
+        is_auto = root_n in auto
+        arrow = "▶" if is_collapsed else "▷" if is_auto else "◆" if root_n in focus_n else "▼"
         live = " ●{}".format(node["live"]) if node["live"] else ""
         title = "{} {}".format(arrow, node["label"])
         meta = "{}{}".format(node["count"], live)
-        targets[len(lines)] = ("pj", node["root"])
+        targets[len(lines)] = ("pj-auto" if is_auto else "pj", node["root"])
         lines.append(title + "  " + meta)
-        if is_collapsed:
+        if is_collapsed or is_auto:
             continue
         for s in node["sessions"]:
             glyph = STATUS_GLYPH.get(s["status"], "·")
             lines.append("  {} {}".format(glyph, s["label"]))
             files = s["files"]
-            for ch in files[:max_files]:
+            shown = quota.get((root_n, s["sid"] or ""), max_files)
+            for ch in files[:shown]:
                 mark = "*" if ch.ts > last_seen else " "
                 wt = f"  ⟨{ch.wt}⟩" if ch.wt else ""
                 mult = f"  ×{ch.count}" if ch.count > 1 else ""
                 rel = elide_rel(ch.rel, width - 10 - dwidth(wt) - dwidth(mult))
                 targets[len(lines)] = ("file", ch.path)
                 lines.append(f"  {mark} {fmt_time(ch.ts, now)} {rel}{wt}{mult}")
-            if len(files) > max_files:
-                lines.append(f"      … +{len(files) - max_files} more")
+            if len(files) > shown:
+                lines.append(f"      … +{len(files) - shown} more")
         lines.append("")
     return "\n".join(lines).rstrip("\n") + "\n", targets
 

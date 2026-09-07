@@ -9,7 +9,7 @@ resolution-markers = [
 
 [[package]]
 name = "claude-code-ide-sublime"
-version = "0.3.4"
+version = "0.3.7"
 source = { virtual = "." }
 
 [package.dev-dependencies]

@@ -6,6 +6,7 @@ Data comes from ``claudeide.activity`` (hook log + filesystem watcher);
 this module owns the view, the timers, and the click/key handling.
 """
 
+import contextlib
 import json
 import os
 import threading
@@ -14,7 +15,7 @@ import time
 import sublime
 
 from ..claudeide import activity as A
-from ..claudeide import fswatch
+from ..claudeide import fswatch, logbuf
 
 SETTINGS_FILE = "Claude Code IDE.sublime-settings"
 PANEL_SETTING = "claude_activity_panel"
@@ -49,6 +50,12 @@ MAX_LOG_RECORDS = 20000
 # so a Sublime that stays open for days does not let them grow unbounded.
 COMPACT_EVERY = 1800.0
 
+# Guards the model. Held briefly by the watcher threads (ingest, burst gate)
+# and by the main thread (tick, render). THREAD RULE: while a background
+# thread holds it, no ``sublime.*`` call — not even a settings read — or the
+# editor deadlocks (see claudeide.logbuf). The main thread only ever takes it
+# with a timeout (``_held``) so a slow background holder costs a skipped tick,
+# never a frozen UI.
 _lock = threading.RLock()
 _model = None  # type: A.ActivityModel
 _watcher = None  # type: fswatch.Watcher
@@ -125,8 +132,24 @@ def all_hidden():
 
 
 def _log(msg):
-    if sublime.load_settings(SETTINGS_FILE).get("debug", False):
-        print("[ClaudeCodeIDE] activity: " + msg)
+    # never touches the API: callable from the watcher threads under _lock
+    logbuf.log("[ClaudeCodeIDE] activity: " + msg)
+
+
+@contextlib.contextmanager
+def _held(timeout):
+    """Main-thread lock acquisition that gives up after ``timeout`` seconds
+    (yields False) instead of blocking the UI."""
+    got = _lock.acquire(timeout=timeout)
+    try:
+        yield got
+    finally:
+        if got:
+            _lock.release()
+
+
+MAIN_LOCK_WAIT = 0.25   # timers: skip and retry soon
+USER_LOCK_WAIT = 2.0    # explicit user actions: worth a short wait
 
 
 # ---------- lifecycle ----------
@@ -278,7 +301,9 @@ def _should_ignore(root, rel):
 
 def _on_fs_change(path, ts, action):
     """Watcher thread: ingest into the live model, and persist to the fs log
-    only default-view changes (see A.is_fs_loggable) so the file stays lean."""
+    only default-view changes (see A.is_fs_loggable) so the file stays lean.
+    Rendering is left to the next ``_tick`` (``_dirty``): no API call from
+    this thread, per the thread rule on ``_lock``."""
     global _dirty
     with _lock:
         if not _running:
@@ -295,7 +320,6 @@ def _on_fs_change(path, ts, action):
                                             ensure_ascii=False) + "\n")
                 except OSError as exc:
                     _log(f"fs log write failed: {exc}")
-    sublime.set_timeout(_schedule_render, 0)
 
 
 def _on_watch_error(root, msg):
@@ -308,9 +332,13 @@ def _tick():
     global _dirty
     if not _running:
         return
+    logbuf.drain()
     c = conf()
     changed = False
-    with _lock:
+    with _held(MAIN_LOCK_WAIT) as got:
+        if not got:
+            sublime.set_timeout(_tick, 250)  # a watcher thread has the model: retry
+            return
         try:
             live = A.load_sessions(sessions_dir())
             prev = {(s.sid, s.status, s.name) for s in _model.sessions.values() if s.live}
@@ -538,7 +566,10 @@ def render_view(view):
     c = conf()
     within = _scope_dirs(view.window())
     hidden = all_hidden()
-    with _lock:
+    with _held(MAIN_LOCK_WAIT) as got:
+        if not got:
+            _schedule_render()
+            return
         tree = _model.tree(st["window_hours"] * 3600.0, show_code=st["show_code"],
                            within=within, hidden=hidden)
         live = sum(1 for s in _model.sessions.values() if s.live)
@@ -682,7 +713,9 @@ def project_root_at(view, point=None):
     kind, target = t
     if kind == "pj":
         return target
-    with _lock:
+    with _held(USER_LOCK_WAIT) as got:
+        if not got:
+            return None
         ch = _model.changes.get(A.norm(target)) if _model is not None else None
     return ch.root if ch is not None else None
 
@@ -733,8 +766,8 @@ def set_window_hours(view, hours):
 
 
 def refresh(view):
-    with _lock:
-        if _model is not None:
+    with _held(USER_LOCK_WAIT) as got:
+        if got and _model is not None:
             _model.set_sessions(A.load_sessions(sessions_dir()))
             _ingest_hook_log()
             _model.reattribute()
@@ -748,7 +781,9 @@ def flat_items(window_hours=None, show_code=None, window=None):
     c = conf()
     hours = window_hours if window_hours is not None else float(c["window_hours"])
     code = c["show_code"] if show_code is None else show_code
-    with _lock:
+    with _held(USER_LOCK_WAIT) as got:
+        if not got:
+            return []
         tree = _model.tree(hours * 3600.0, show_code=code, within=_scope_dirs(window),
                            hidden=all_hidden())
     items = []

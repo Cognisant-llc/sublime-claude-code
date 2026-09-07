@@ -13,7 +13,7 @@ import threading
 
 import sublime
 
-from ..claudeide import jsonrpc, lockfile
+from ..claudeide import jsonrpc, lockfile, logbuf
 from ..claudeide.jsonrpc import DEFERRED
 from ..claudeide.mcp import MCPServer, ToolError
 from ..claudeide.pathurl import path_to_uri
@@ -23,7 +23,7 @@ from . import diff_view
 
 SETTINGS_FILE = "Claude Code IDE.sublime-settings"
 STATUS_KEY = "zz_claude_ide"
-PLUGIN_VERSION = "0.3.6"
+PLUGIN_VERSION = "0.3.7"
 
 _main_thread = None  # type: Optional[threading.Thread]
 
@@ -46,8 +46,14 @@ def settings():
 
 
 def log(msg):
-    if settings().get("debug", False):
-        print(f"[ClaudeCodeIDE] {msg}")
+    """Console trace. Safe from the reader/accept threads: the ``debug`` flag
+    is cached on the main thread and off-main lines are buffered (see
+    claudeide.logbuf — an API call from a background thread can deadlock)."""
+    logbuf.log(f"[ClaudeCodeIDE] {msg}")
+
+
+def _sync_debug():
+    logbuf.set_enabled(settings().get("debug", False))
 
 
 # ---------- threading helpers ----------
@@ -56,6 +62,9 @@ def log(msg):
 def remember_main_thread():
     global _main_thread
     _main_thread = threading.current_thread()
+    logbuf.remember_main_thread()
+    _sync_debug()
+    settings().add_on_change("claude_ide_debug", _sync_debug)
 
 
 def run_on_main(fn, timeout=5.0):
@@ -284,6 +293,7 @@ def _refresh_status_bar():
 
 
 def on_activated(view):
+    logbuf.drain()
     text = _status_text()
     if text:
         view.set_status(STATUS_KEY, text)

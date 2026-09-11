@@ -3,7 +3,7 @@
 import sublime
 import sublime_plugin
 
-from .adapters import activity_panel, diff_view
+from .adapters import activity_panel, diff_view, session_tabs
 from .adapters import sublime_bridge as bridge
 
 
@@ -229,6 +229,50 @@ class ClaudeIdeActivityQuickCommand(sublime_plugin.WindowCommand):
         self.window.show_quick_panel([[name, detail] for name, detail, _ in items], on_done)
 
 
+# ---------- Session tabs (colour + grouping) ----------
+
+
+class ClaudeIdeSessionTabsCommand(sublime_plugin.WindowCommand):
+    """Tab context menu / palette: act on every tab of one session.
+    ``group``/``index`` arrive from the tab context menu; otherwise the
+    active tab's session is used."""
+
+    def _sid(self, group=-1, index=-1, sid=None):
+        if sid:
+            return sid
+        if group >= 0 and index >= 0:
+            return session_tabs.sid_at(self.window, group, index)
+        return session_tabs.sid_of(self.window.active_view())
+
+    def run(self, action, group=-1, index=-1, sid=None):
+        activity_panel.session_action(self.window, action, self._sid(group, index, sid))
+
+    def is_visible(self, action, group=-1, index=-1, sid=None):
+        if action == "regroup":
+            return True
+        return self._sid(group, index, sid) is not None
+
+
+class ClaudeIdePanelSessionTabsCommand(sublime_plugin.TextCommand):
+    """Panel context menu: the session row under the pointer."""
+
+    def want_event(self):
+        return True
+
+    def _sid(self, event):
+        if not _is_panel(self.view) or not event or "x" not in event:
+            return None
+        point = self.view.window_to_text((event["x"], event["y"]))
+        t = activity_panel.target_at(self.view, point)
+        return t[1] if t and t[0] == "sess" and t[1] else None
+
+    def run(self, edit, action, event=None):
+        activity_panel.session_action(self.view.window(), action, self._sid(event))
+
+    def is_visible(self, action, event=None):
+        return self._sid(event) is not None
+
+
 class ClaudeIdeEventListener(sublime_plugin.EventListener):
     def on_selection_modified_async(self, view):
         bridge.on_selection_modified(view)
@@ -243,6 +287,19 @@ class ClaudeIdeEventListener(sublime_plugin.EventListener):
             sublime.set_timeout(lambda: activity_panel.mark_seen(view), 0)
         else:
             activity_panel._update_status(view)
+            # tabs opened by other routes (Goto Anything, sidebar) pick up
+            # their session lazily; never moved, only coloured
+            if view.file_name() and not session_tabs.sid_of(view):
+                sid = activity_panel.session_for_path(view.file_name())
+                if sid:
+                    session_tabs.tag(view, sid)
+
+    def on_load(self, view):
+        window = view.window()
+        path = view.file_name()
+        if window is None or not path or session_tabs.sid_of(view):
+            return
+        session_tabs.tag_and_place(window, view, activity_panel.session_for_path(path))
 
     def on_deactivated(self, view):
         if _is_panel(view):

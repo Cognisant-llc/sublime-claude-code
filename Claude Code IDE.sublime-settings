@@ -12,6 +12,17 @@
 	// position come back when the last review closes — grids included.
 	"diff_layout": "columns",
 
+	// Session tabs: every tab opened by or for a Claude session gets a badge
+	// in its title (① … ⑧, the same badge the session's row shows in the
+	// Recent Activity panel) and is placed next to the session's other tabs.
+	// Right-click a tab, or a session row in the panel, for the session menu
+	// (focus / copy paths / move / fold / close). 8 badges; further sessions
+	// stay unbadged until one frees up.
+	"session_tabs": {
+		"badges": true,
+		"group": true
+	},
+
 	// Fixed server port (1024-65535), or null for a random port.
 	// A fixed port lets you set machine-wide env vars once
 	// (CLAUDE_CODE_SSE_PORT=<port>, ENABLE_IDE_INTEGRATION=true) so every

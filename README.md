@@ -55,6 +55,16 @@ A **project is the directory you opened `claude` in** — the session's working 
 
 **Settings** live under `activity_panel`: `auto_open`, `group` and `min_width_chars` (where the pane goes and how wide), `window_hours`, `show_code`, `scope` (`"all"` = every live session's project; `"window"` = only files under this window's folders), `hide_projects`, `prune` (directory names never listed nor watched), `keep_days`, `fit_to_view`. With `fit_to_view` (default) the tree is sized to the pane: every project stays visible, each session shows its newest file before any session shows a second one, and when even the rows do not fit the oldest projects fold to a single line (`▷`; click one to focus it, `◆`, and it expands up to `max_files_per_session` while the others share what is left). The two logs are `~/.claude/logs/file-activity*.jsonl`; they are compacted every 30 minutes and bounded by both age (`keep_days`, default 7) and record count, and the watcher log keeps document/media records only. A burst of more than 100 changes in one project within 10 seconds (a `git checkout` or rebase rewriting a tree) is treated as a storm, not as session activity, and dropped; the panel header shows the running count (`⚡`). The filesystem watcher is Windows-only for now — elsewhere the panel shows hook records only.
 
+### Session tabs (0.3.8)
+
+Every tab a Claude session opens or writes carries that session, so the tab bar can be *grouped* even though Sublime cannot colour or label a single tab (theme `settings` selectors only read global settings, and `View.set_name` on a file tab detaches the file — both verified, neither is used):
+
+- **Adjacent tabs**: a tab opened by or for a session (Recent Activity click, `openFile`, `scripts/open_file.py`, or any file the session wrote) is placed right after that session's other tabs. Tabs you drag by hand are never moved again; *Session Tabs — Regroup All Tabs by Session* re-clusters the whole pane on demand.
+- **Panel badges**: a session row shows `① ⧉3` (badge, open tabs) and `⊟2` (folded tabs). Clicking the row focuses the session's newest tab, or reopens its folded tabs.
+- **Session menu**: right-click a tab (or a session row in the panel) → *Session Tabs*: focus newest, copy the paths of the session's tabs, move them to the front/back of the pane, fold them (close and remember on the window — reopen from the row) or close them (unsaved tabs are kept). The same actions are in the command palette for the active tab's session.
+
+`scripts/open_file.py` tags the tab with `$CLAUDE_CODE_SESSION_ID` automatically (`--session <id>` to override). Settings: `session_tabs.badges`, `session_tabs.group`.
+
 ## Install (manual — Package Control listing pending)
 
 1. Clone this repo anywhere.

@@ -16,6 +16,7 @@ import sublime
 
 from ..claudeide import activity as A
 from ..claudeide import fswatch, logbuf
+from . import session_tabs as ST
 
 SETTINGS_FILE = "Claude Code IDE.sublime-settings"
 PANEL_SETTING = "claude_activity_panel"
@@ -178,6 +179,8 @@ def start():
         _watcher = fswatch.Watcher(_on_fs_change, should_ignore=_should_ignore,
                                    on_error=_on_watch_error, batch_filter=_batch_filter)
         _watcher.set_roots(_model.roots.watch_dirs())
+    ST.set_sessions({s.sid: s.name for s in _model.sessions.values()},
+                    [s.sid for s in _model.sessions.values() if s.live])
     sublime.set_timeout(_tick, int(c["poll_ms"]))
     if c["auto_open"]:
         sublime.set_timeout(lambda: _ensure_panels(create=True), 300)
@@ -345,6 +348,8 @@ def _tick():
             now = {(s.sid, s.status, s.name) for s in live.values()}
             if prev != now:
                 changed = True
+            ST.set_sessions({s.sid: s.name for s in live.values()},
+                            [s.sid for s in live.values() if s.live])
             _model.set_sessions(live)
             if _ingest_hook_log():
                 _model.reattribute()
@@ -367,7 +372,8 @@ def _tick():
             if view is None:
                 continue
             if (view.settings().get("claude_activity_width") != _text_width(view)
-                    or view.settings().get("claude_activity_lines") != _text_lines(view)):
+                    or view.settings().get("claude_activity_lines") != _text_lines(view)
+                    or view.settings().get("claude_activity_marks") != ST.panel_marks(window)):
                 changed = True
                 break
     if changed:
@@ -583,10 +589,13 @@ def render_view(view):
         "  ·  ⚠ " + _last_error if _last_error else "")
     width = _text_width(view)
     max_lines = _text_lines(view)
+    window = view.window()
+    marks = ST.panel_marks(window) if window is not None else {}
     text, targets = A.render(tree, st["collapsed"], st["last_seen"], width=width,
                              max_files=int(c["max_files_per_session"]), header=header,
-                             max_lines=max_lines, focus=st["focus"])
+                             max_lines=max_lines, focus=st["focus"], marks=marks)
     view.settings().set("claude_activity_width", width)
+    view.settings().set("claude_activity_marks", marks)
     view.settings().set("claude_activity_lines", max_lines)
     view.settings().set("claude_activity_targets",
                         {str(k): list(v) for k, v in targets.items()})
@@ -682,6 +691,10 @@ def activate(view, point=None):
         _set_panel_state(view, collapsed=collapsed)
         render_view(view)
         return
+    if kind == "sess":
+        if target:
+            session_action(view.window(), "focus", target)
+        return
     open_target(view.window(), target)
 
 
@@ -698,7 +711,75 @@ def open_target(window, path):
         return
     group = _main_group(window)
     view = window.open_file(path, group=group)
+    ST.tag_and_place(window, view, session_for_path(path))
     window.focus_view(view)
+
+
+def session_for_path(path):
+    """Session that last changed ``path`` according to the model, or None."""
+    if _model is None or not path:
+        return None
+    with _held(MAIN_LOCK_WAIT) as got:
+        if not got:
+            return None
+        ch = _model.changes.get(A.norm(path))
+        return ch.sid if ch is not None else None
+
+
+def session_label(sid):
+    if _model is None or not sid:
+        return ST.label_for(sid)
+    with _held(MAIN_LOCK_WAIT) as got:
+        return _model.session_label(sid) if got else ST.label_for(sid)
+
+
+def rerender(window):
+    view = find_panel(window)
+    if view is not None:
+        render_view(view)
+
+
+SESSION_ACTIONS = ("focus", "unfold", "copy_paths", "move_front", "move_back",
+                   "regroup", "fold", "close")
+
+
+def session_action(window, action, sid):
+    """One session-group action (tab menu, panel row, palette).
+    ``focus`` on a folded session reopens its tabs."""
+    label = session_label(sid) if sid else ""
+    if action == "regroup":
+        n = ST.regroup_window(window)
+        sublime.status_message(f"Session tabs: moved {n} tab(s)")
+        rerender(window)
+        return
+    if not sid:
+        sublime.status_message("Session tabs: this tab belongs to no Claude session")
+        return
+    if action == "focus":
+        if ST.is_folded(window, sid) and not ST.views_of(window, sid):
+            n = ST.unfold(window, sid, group=_main_group(window))
+            sublime.status_message(f"Session tabs: reopened {n} tab(s) of {label}")
+        elif not ST.focus_newest(window, sid):
+            sublime.status_message(f"Session tabs: no open tab for {label}")
+    elif action == "unfold":
+        n = ST.unfold(window, sid, group=_main_group(window))
+        sublime.status_message(f"Session tabs: reopened {n} tab(s) of {label}")
+    elif action == "copy_paths":
+        paths = ST.paths_of(window, sid)
+        sublime.set_clipboard("\n".join(paths))
+        sublime.status_message(f"Session tabs: copied {len(paths)} path(s) of {label}")
+    elif action in ("move_front", "move_back"):
+        n = ST.move_session(window, sid, action[5:])
+        sublime.status_message(f"Session tabs: moved {n} tab(s) of {label}")
+    elif action == "fold":
+        n = ST.fold(window, sid)
+        sublime.status_message(
+            f"Session tabs: folded {n} tab(s) of {label} — click its row to reopen")
+    elif action == "close":
+        n = ST.close_session(window, sid)
+        sublime.status_message(
+            f"Session tabs: closed {n} tab(s) of {label} (unsaved tabs kept)")
+    rerender(window)
 
 
 def project_root_at(view, point=None):

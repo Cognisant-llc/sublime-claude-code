@@ -14,6 +14,23 @@ from scripts.open_file import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _no_session_env(monkeypatch):
+    monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)
+
+
+def test_session_from_flag(tmp_path):
+    args = request_from_argv([str(tmp_path / "a.md"), "--session", "sid-1"])
+    assert args["sessionId"] == "sid-1"
+
+
+def test_session_from_env(tmp_path, monkeypatch):
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "env-sid")
+    assert request_from_argv([str(tmp_path / "a.md")])["sessionId"] == "env-sid"
+    # an explicit flag wins over the environment
+    assert request_from_argv([str(tmp_path / "a.md"), "--session", "x"])["sessionId"] == "x"
+
+
 def _ok(msg_id, text, is_error=False):
     result = {"content": [{"type": "text", "text": text}]}
     if is_error:

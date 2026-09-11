@@ -19,11 +19,11 @@ from ..claudeide.mcp import MCPServer, ToolError
 from ..claudeide.pathurl import path_to_uri
 from ..claudeide.session import PendingRequests
 from ..claudeide.wsserver import WSServer
-from . import diff_view
+from . import activity_panel, diff_view, session_tabs
 
 SETTINGS_FILE = "Claude Code IDE.sublime-settings"
 STATUS_KEY = "zz_claude_ide"
-PLUGIN_VERSION = "0.3.7"
+PLUGIN_VERSION = "0.3.8"
 
 _main_thread = None  # type: Optional[threading.Thread]
 
@@ -517,6 +517,8 @@ def _tool_open_file(args, ctx):
         flags = sublime.TRANSIENT if preview else 0
         group = _side_group(window)
         view = window.open_file(file_path, flags, group=group)
+        session_tabs.tag_and_place(
+            window, view, args.get("sessionId") or activity_panel.session_for_path(file_path))
         if make_frontmost:
             window.focus_view(view)
             if hasattr(window, "bring_to_front"):

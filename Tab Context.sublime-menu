@@ -1,0 +1,27 @@
+// Right-click on a tab: act on every tab of the same Claude session
+// (Chrome-style tab-group menu). Sublime passes {"group", "index"} of the
+// clicked tab; the entries are hidden on tabs that belong to no session.
+[
+	{ "caption": "-", "id": "claude_session_tabs" },
+	{
+		"caption": "Session Tabs",
+		"children": [
+			{ "caption": "Focus Newest Tab of This Session",
+			  "command": "claude_ide_session_tabs", "args": {"action": "focus"} },
+			{ "caption": "Copy Paths of This Session's Tabs",
+			  "command": "claude_ide_session_tabs", "args": {"action": "copy_paths"} },
+			{ "caption": "-" },
+			{ "caption": "Move This Session's Tabs to the Front",
+			  "command": "claude_ide_session_tabs", "args": {"action": "move_front"} },
+			{ "caption": "Move This Session's Tabs to the Back",
+			  "command": "claude_ide_session_tabs", "args": {"action": "move_back"} },
+			{ "caption": "Regroup All Tabs by Session",
+			  "command": "claude_ide_session_tabs", "args": {"action": "regroup"} },
+			{ "caption": "-" },
+			{ "caption": "Fold This Session's Tabs (reopen from the panel)",
+			  "command": "claude_ide_session_tabs", "args": {"action": "fold"} },
+			{ "caption": "Close This Session's Tabs",
+			  "command": "claude_ide_session_tabs", "args": {"action": "close"} }
+		]
+	}
+]

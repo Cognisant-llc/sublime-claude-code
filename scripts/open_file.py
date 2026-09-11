@@ -14,6 +14,7 @@ Usage:
     python scripts/open_file.py PATH --preview      # transient, no focus steal
     python scripts/open_file.py PATH --no-focus     # normal tab, no focus steal
     python scripts/open_file.py PATH --start-text "## Summary" [--end-text S]
+    python scripts/open_file.py PATH --session <id>  # tab colour/group (default: env)
                                      [--select-to-eol]
 
 Exit codes: 0 opened / 1 no reachable Sublime server / 2 bad arguments.
@@ -52,6 +53,9 @@ def request_from_argv(argv):
     ap.add_argument("--end-text", help="…through the end of this literal text")
     ap.add_argument("--select-to-eol", action="store_true",
                     help="extend the selection to the end of its line")
+    ap.add_argument("--session",
+                    help="Claude session id the tab belongs to (colour + grouping); "
+                         "default: $CLAUDE_CODE_SESSION_ID")
     ns = ap.parse_args(argv)
 
     args = {
@@ -59,6 +63,9 @@ def request_from_argv(argv):
         "preview": ns.preview,
         "makeFrontmost": not (ns.preview or ns.no_focus),
     }
+    sid = ns.session or os.environ.get("CLAUDE_CODE_SESSION_ID")
+    if sid:
+        args["sessionId"] = sid
     if ns.start_text:
         args["startText"] = ns.start_text
         if ns.end_text:

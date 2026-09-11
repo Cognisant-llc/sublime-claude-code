@@ -1,0 +1,20 @@
+// Right-click on a session row inside the Recent Activity panel: the same
+// session actions as the tab context menu. Hidden everywhere else
+// (is_visible checks the row under the pointer).
+[
+	{ "caption": "-", "id": "claude_session_row" },
+	{ "caption": "Focus Newest Tab of This Session",
+	  "command": "claude_ide_panel_session_tabs", "args": {"action": "focus"} },
+	{ "caption": "Reopen This Session's Folded Tabs",
+	  "command": "claude_ide_panel_session_tabs", "args": {"action": "unfold"} },
+	{ "caption": "Copy Paths of This Session's Tabs",
+	  "command": "claude_ide_panel_session_tabs", "args": {"action": "copy_paths"} },
+	{ "caption": "Move This Session's Tabs to the Front",
+	  "command": "claude_ide_panel_session_tabs", "args": {"action": "move_front"} },
+	{ "caption": "Move This Session's Tabs to the Back",
+	  "command": "claude_ide_panel_session_tabs", "args": {"action": "move_back"} },
+	{ "caption": "Fold This Session's Tabs",
+	  "command": "claude_ide_panel_session_tabs", "args": {"action": "fold"} },
+	{ "caption": "Close This Session's Tabs",
+	  "command": "claude_ide_panel_session_tabs", "args": {"action": "close"} }
+]

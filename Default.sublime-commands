@@ -81,6 +81,26 @@
 		"args": { "hours": 168 }
 	},
 	{
+		"caption": "Claude Code IDE: Session Tabs — Regroup All Tabs by Session",
+		"command": "claude_ide_session_tabs",
+		"args": { "action": "regroup" }
+	},
+	{
+		"caption": "Claude Code IDE: Session Tabs — Copy Paths (Active Tab's Session)",
+		"command": "claude_ide_session_tabs",
+		"args": { "action": "copy_paths" }
+	},
+	{
+		"caption": "Claude Code IDE: Session Tabs — Fold (Active Tab's Session)",
+		"command": "claude_ide_session_tabs",
+		"args": { "action": "fold" }
+	},
+	{
+		"caption": "Claude Code IDE: Session Tabs — Close (Active Tab's Session)",
+		"command": "claude_ide_session_tabs",
+		"args": { "action": "close" }
+	},
+	{
 		"caption": "Claude Code IDE: Dev — Reload Plugin (with submodules)",
 		"command": "claude_ide_dev_reload"
 	},

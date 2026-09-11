@@ -932,12 +932,16 @@ def plan_lines(tree: List[Dict[str, Any]], collapsed: Iterable[str], focus: Iter
 def render(tree: List[Dict[str, Any]], collapsed: Iterable[str], last_seen: float,
            width: int = 46, max_files: int = 20, now: Optional[float] = None,
            header: str = "", max_lines: Optional[int] = None,
-           focus: Iterable[str] = ()) -> Tuple[str, Dict[int, Tuple[str, str]]]:
+           focus: Iterable[str] = (),
+           marks: Optional[Dict[str, str]] = None,
+           ) -> Tuple[str, Dict[int, Tuple[str, str]]]:
     """Render the tree to text. Returns ``(text, {line_no: (kind, target)})``
     where kind is ``'file'`` (target=absolute path), ``'pj'`` (target=root;
     click toggles collapse / drops focus) or ``'pj-auto'`` (a project folded to
     fit the view; click focuses it). Arrows: ▼ open, ◆ focused, ▶ collapsed
-    by hand, ▷ folded automatically."""
+    by hand, ▷ folded automatically. Session rows are ``'sess'`` targets
+    (target=session id, '' when unattributed); ``marks`` = ``{sid: suffix}``
+    appended to the session's row (badge / open / folded tab counts)."""
     now = now or time.time()
     collapsed_n = {norm(c) for c in collapsed}
     focus_n = {norm(f) for f in focus}
@@ -963,7 +967,9 @@ def render(tree: List[Dict[str, Any]], collapsed: Iterable[str], last_seen: floa
             continue
         for s in node["sessions"]:
             glyph = STATUS_GLYPH.get(s["status"], "·")
-            lines.append("  {} {}".format(glyph, s["label"]))
+            sid = s["sid"] or ""
+            targets[len(lines)] = ("sess", sid)
+            lines.append("  {} {}{}".format(glyph, s["label"], (marks or {}).get(sid, "")))
             files = s["files"]
             shown = quota.get((root_n, s["sid"] or ""), max_files)
             for ch in files[:shown]:

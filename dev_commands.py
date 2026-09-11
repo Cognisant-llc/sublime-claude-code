@@ -35,6 +35,60 @@ class ClaudeIdeDevReloadCommand(sublime_plugin.ApplicationCommand):
         sublime.status_message(_PKG + ": fully reloaded")
 
 
+class ClaudeIdeDevViewSettingCommand(sublime_plugin.ApplicationCommand):
+    """Set a settings key on every view whose file basename matches
+    (smoke scripts: probe per-view theme/colour behaviour)."""
+
+    def run(self, basename, key, value):
+        n = 0
+        for window in sublime.windows():
+            for view in window.views():
+                if os.path.basename(view.file_name() or "") == basename:
+                    view.settings().set(key, value)
+                    n += 1
+        print(f"[{_PKG}] {key}={value!r} on {n} view(s) named {basename}")
+
+
+class ClaudeIdeDevRestoreTabsCommand(sublime_plugin.ApplicationCommand):
+    """Two-phase repair for buffers ``set_name`` detached: back the buffer text
+    up, close the buffer (scratch, no prompt), then reopen the file from disk.
+    Log: <temp>/claude_ide_probe.json."""
+
+    def run(self, paths_file, backup_dir):
+        out = os.path.join(tempfile.gettempdir(), "claude_ide_probe.json")
+        log = []
+        with open(paths_file, encoding="utf-8") as fh:
+            paths = json.load(fh)
+        for path in paths:
+            base = os.path.basename(path)
+            for window in sublime.windows():
+                for view in list(window.views()):
+                    if view.file_name() or not (view.name() or "").endswith(base):
+                        continue
+                    bak = os.path.join(backup_dir, base + ".detached.txt")
+                    with open(bak, "w", encoding="utf-8", newline="") as fh:
+                        fh.write(view.substr(sublime.Region(0, view.size())))
+                    view.set_scratch(True)
+                    closed = view.close()
+                    log.append({"path": path, "closed": closed, "backup": bak,
+                                "valid_after": view.is_valid()})
+
+        def reopen():
+            for path in paths:
+                if not os.path.exists(path):
+                    log.append({"path": path, "reopen": "missing"})
+                    continue
+                window = sublime.active_window()
+                have = any(v.file_name() == path for w in sublime.windows() for v in w.views())
+                if not have:
+                    window.open_file(path)
+                log.append({"path": path, "reopened": not have})
+            with open(out, "w", encoding="utf-8") as fh:
+                json.dump(log, fh, ensure_ascii=False)
+
+        sublime.set_timeout(reopen, 800)
+
+
 class ClaudeIdeDumpStateCommand(sublime_plugin.ApplicationCommand):
     """Dump server/window state to <temp>/claude_ide_state.json.
 
@@ -61,8 +115,16 @@ class ClaudeIdeDumpStateCommand(sublime_plugin.ApplicationCommand):
                                 "group": group,
                                 "has_view": view is not None,
                                 "diff_tab": diff_tab,
+                                "session": view.settings().get("claude_session") if view else None,
+                                "name": view.name() if view else None,
+                                "dirty": view.is_dirty() if view else None,
+                                "window": window.id(),
                             }
                         )
+            buffers = [{"name": v.name(), "dirty": v.is_dirty(), "scratch": v.is_scratch(),
+                        "window": w.id(), "group": w.get_view_index(v)[0], "size": v.size()}
+                       for w in sublime.windows() for v in w.views()
+                       if not v.file_name() and not v.settings().get("claude_activity_panel")]
             transients = []
             for window in sublime.windows():
                 if not hasattr(window, "transient_view_in_group"):
@@ -109,7 +171,16 @@ class ClaudeIdeDumpStateCommand(sublime_plugin.ApplicationCommand):
                 "num_groups": sublime.active_window().num_groups(),
                 "sheets": sheets,
                 "transients": transients,  # preview tabs are invisible to sheets()
+                "buffers": buffers,  # unsaved / detached buffers (no file)
+                "raw": [{"window": w.id(), "active": w.id() == sublime.active_window().id(),
+                         "sheets": len(w.sheets()), "views": len(w.views()),
+                         "groups": [len(w.sheets_in_group(g)) for g in range(w.num_groups())],
+                         "names": [(v.id(), os.path.basename(v.file_name() or ""), v.name())
+                                   for v in w.views()]}
+                        for w in sublime.windows()],
                 "activity_panels": panels,
+                "ui": sublime.ui_info() if hasattr(sublime, "ui_info") else None,
+                "theme_files": sublime.find_resources("*.sublime-theme"),
                 "windows": [
                     {
                         "id": w.id(),

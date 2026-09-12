@@ -128,3 +128,16 @@ def test_render_marks_session_rows_and_tab_counts(tmp_path):
     # without tab info the row is unchanged
     text2, _ = A.render(tree, [], 0.0, now=1001.0, width=40)
     assert text2.splitlines()[1].endswith("one")
+
+
+def test_merge_schemes_applies_overrides_in_order():
+    base = {"name": "Mariana", "variables": {"a": "#111", "b": "#222"},
+            "globals": {"background": "#000", "foreground": "#fff"},
+            "rules": [{"scope": "comment", "foreground": "var(a)"}]}
+    override = {"variables": {"b": "#333"}, "rules": [{"scope": "markup.highlight", "background": "#444"}]}
+    m = T.merge_schemes([base, override, "not a dict"])
+    assert m["name"] == "Mariana" and m["variables"] == {"a": "#111", "b": "#333"}
+    assert m["globals"] == {"background": "#000", "foreground": "#fff"}  # kept from the base
+    assert [r["scope"] for r in m["rules"]] == ["comment", "markup.highlight"]
+    assert T.merge_schemes([]) == {}
+

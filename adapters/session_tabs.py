@@ -105,14 +105,14 @@ def _ui_scheme() -> Optional[Tuple[str, Dict[str, str]]]:
 
 
 def _load_scheme(base: str) -> Optional[dict]:
-    """The user's scheme as a dict (the last matching resource wins, like
-    Sublime's own override order)."""
+    """The user's scheme as one dict: every same-named resource merged in load
+    order, the way Sublime applies overrides (a partial override in
+    Packages/User only carries a few rules — reading it alone loses the
+    foreground and every variable)."""
     try:
         paths = sublime.find_resources(os.path.basename(base)) if "/" not in base else [base]
-        if not paths:
-            return None
-        data = sublime.decode_value(sublime.load_resource(paths[-1]))
-        return data if isinstance(data, dict) else None
+        merged = T.merge_schemes([sublime.decode_value(sublime.load_resource(p)) for p in paths])
+        return merged if merged.get("rules") or merged.get("globals") else None
     except Exception as exc:  # noqa: BLE001 - unreadable / non-JSON scheme
         print(f"[ClaudeCodeIDE] cannot read colour scheme {base}: {exc}")
         return None

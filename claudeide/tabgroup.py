@@ -60,6 +60,23 @@ def blend(base: str, hue: str, t: float) -> str:
     return "#" + "".join(f"{round(b[i] * (1 - t) + h[i] * t):02x}" for i in range(3))
 
 
+def merge_schemes(parts: Sequence[dict]) -> dict:
+    """Same-named colour-scheme resources combined in load order, the way
+    Sublime applies overrides: variables and globals update, rules append.
+    (A partial override in Packages/User read alone has no foreground.)"""
+    merged = {}  # type: dict
+    for data in parts:
+        if not isinstance(data, dict):
+            continue
+        for key in ("name", "author", "extends"):
+            if key in data:
+                merged[key] = data[key]
+        merged.setdefault("variables", {}).update(data.get("variables") or {})
+        merged.setdefault("globals", {}).update(data.get("globals") or {})
+        merged.setdefault("rules", []).extend(data.get("rules") or [])
+    return merged
+
+
 def tinted_scheme(base: dict, background: str, hue: str, tint: float) -> dict:
     """Copy of the user's colour scheme (already decoded) with a hued
     background. Copying keeps variables, globals and rules intact — an

@@ -1,13 +1,15 @@
-"""Session-grouped tabs (Sublime side).
+"""Session-coloured, session-grouped tabs (Sublime side).
 
 Tabs opened by or for a Claude session carry the session id in their view
-settings (``claude_session``); the Recent Activity panel shows the session's
-badge and open-tab count after its row (a click focuses the newest tab).
-Never ``View.set_name`` a file tab: it detaches the file. Tabs of one session
-are kept adjacent; a
-session's tabs can be focused, folded (closed and remembered on the window,
-reopened as a set), closed, moved to the front/back of the pane, or their
-paths copied — from the tab's context menu or the panel row.
+settings (``claude_session``). Each session with open tabs takes one of eight
+colour slots; the tab is coloured by giving its view a hidden colour scheme
+(the user's scheme extended with a hued background — the only channel that
+colours a single tab, see ``claudeide.tabgroup``), the Recent Activity panel
+underlines the session's row in the same hue and shows the badge / tab counts,
+and tabs of one session are kept adjacent. A session's tabs can be focused,
+folded (closed and remembered on the window, reopened as a set), closed,
+moved to the front/back of the pane, or their paths copied — from the tab's
+context menu or the panel row.
 
 Everything here runs on the main thread (event listeners and commands).
 """
@@ -22,16 +24,25 @@ from ..claudeide import tabgroup as T
 
 SESSION_SETTING = "claude_session"
 OPENED_SETTING = "claude_tab_opened"
+SLOT_SETTING = "claude_tab_slot"
 FOLDED_SETTING = "claude_folded_tabs"   # window setting: {sid: [path, ...]}
+SCHEME_DIR = "Claude Code IDE Sessions"   # under Packages/User
 
 _slots = T.SlotMap()
 _live = set()  # type: set
 _labels = {}  # type: Dict[str, str]
+_scheme_sig = None  # type: Optional[tuple]
+_scheme_ok = False
 
 
 def conf():
     s = sublime.load_settings("Claude Code IDE.sublime-settings").get("session_tabs") or {}
-    return {"badges": bool(s.get("badges", True)), "group": bool(s.get("group", True))}
+    return {
+        "colors": bool(s.get("colors", True)),
+        "tint": float(s.get("tint", T.DEFAULT_TINT)),
+        "badges": bool(s.get("badges", True)),
+        "group": bool(s.get("group", True)),
+    }
 
 
 # ---------- state fed by the activity panel ----------
@@ -65,8 +76,134 @@ def slot_for(sid: Optional[str]) -> int:
 
 
 def slots_of(sids) -> Dict[str, int]:
-    """Current badge slots (read-only: a session with no tab takes none)."""
+    """Current slots (read-only: a session with no tab takes none)."""
     return {sid: _slots.slot(sid) for sid in sids if _slots.slot(sid)}
+
+
+# ---------- colour schemes (one hidden scheme per slot, under Packages/User) ----------
+
+
+def _scheme_dir() -> str:
+    return os.path.join(sublime.packages_path(), "User", SCHEME_DIR)
+
+
+def _scheme_resource(slot: int) -> str:
+    return f"Packages/User/{SCHEME_DIR}/{T.scheme_file(slot)}"
+
+
+def _ui_scheme() -> Optional[Tuple[str, Dict[str, str]]]:
+    """(resolved colour scheme, palette) from Sublime, or None when unknown."""
+    try:
+        info = sublime.ui_info()["color_scheme"]
+        base = info.get("resolved_value") or info.get("value")
+        palette = info.get("palette") or {}
+        if base and "background" in palette:
+            return base, palette
+    except Exception:  # noqa: BLE001 - older builds / odd schemes
+        pass
+    return None
+
+
+def _load_scheme(base: str) -> Optional[dict]:
+    """The user's scheme as a dict (the last matching resource wins, like
+    Sublime's own override order)."""
+    try:
+        paths = sublime.find_resources(os.path.basename(base)) if "/" not in base else [base]
+        if not paths:
+            return None
+        data = sublime.decode_value(sublime.load_resource(paths[-1]))
+        return data if isinstance(data, dict) else None
+    except Exception as exc:  # noqa: BLE001 - unreadable / non-JSON scheme
+        print(f"[ClaudeCodeIDE] cannot read colour scheme {base}: {exc}")
+        return None
+
+
+def sync_schemes() -> bool:
+    """Write the eight slot schemes when the user's scheme or the tint changed.
+    Returns True when tinted schemes are available."""
+    global _scheme_sig, _scheme_ok
+    c = conf()
+    if not c["colors"]:
+        _scheme_ok = False
+        return False
+    ui = _ui_scheme()
+    if ui is None:
+        _scheme_ok = False
+        return False
+    base, palette = ui
+    if base.endswith(".tmTheme"):
+        _scheme_ok = False  # `extends` needs a .sublime-color-scheme base
+        return False
+    sig = (base, palette.get("background"), round(c["tint"], 3),
+           tuple(palette.get(h, "") for h in T.HUES))
+    if sig == _scheme_sig and _scheme_ok:
+        return True
+    data = _load_scheme(base)
+    if data is None:
+        _scheme_ok = False
+        return False
+    d = _scheme_dir()
+    try:
+        os.makedirs(d, exist_ok=True)
+        for slot in range(1, T.SLOTS + 1):
+            hue = palette.get(T.hue_name(slot)) or palette.get("accent") or "#888888"
+            text = T.scheme_json(data, palette["background"], hue, c["tint"])
+            path = os.path.join(d, T.scheme_file(slot))
+            if not os.path.exists(path) or open(path, encoding="utf-8").read() != text:
+                with open(path, "w", encoding="utf-8", newline="\n") as fh:
+                    fh.write(text)
+    except OSError as exc:
+        print(f"[ClaudeCodeIDE] session tab schemes: {exc}")
+        _scheme_ok = False
+        return False
+    # Sublime indexes new package files asynchronously: assigning a scheme it
+    # has not indexed yet pops an "Unable to find" dialog. Wait until every
+    # slot file is a known resource, then colour (the poll calls sync()).
+    known = set(sublime.find_resources(T.SCHEME_PREFIX + "*.hidden-color-scheme"))
+    if any(_scheme_resource(slot) not in known for slot in range(1, T.SLOTS + 1)):
+        _scheme_ok = False
+        sublime.set_timeout(sync, 1500)
+        return False
+    _scheme_sig = sig
+    _scheme_ok = True
+    return True
+
+
+def _apply_color(view, slot: int) -> None:
+    s = view.settings()
+    if slot and _scheme_ok:
+        s.set(SLOT_SETTING, slot)
+        # erase first: re-setting the same value is not a change, and a view
+        # that fell back to the default scheme (resource not indexed yet)
+        # only re-resolves on a change
+        s.erase("color_scheme")
+        s.set("color_scheme", _scheme_resource(slot))
+    else:
+        if s.has(SLOT_SETTING):
+            s.erase(SLOT_SETTING)
+        if str(s.get("color_scheme", "")).startswith(f"Packages/User/{SCHEME_DIR}/"):
+            s.erase("color_scheme")
+
+
+def recolor_all() -> None:
+    """(Re)apply every tagged tab's colour: at start (slots are not persisted),
+    after the user's scheme or the settings changed, after a slot moved."""
+    colors = sync_schemes()
+    for window in sublime.windows():
+        for view in window.views():
+            sid = sid_of(view)
+            if sid:
+                _apply_color(view, slot_for(sid) if colors else 0)
+            elif view.settings().has(SLOT_SETTING):
+                _apply_color(view, 0)
+
+
+def sync() -> None:
+    """Cheap per-poll check: recolour when the scheme/tint signature moved."""
+    before = (_scheme_sig, _scheme_ok)
+    sync_schemes()
+    if (_scheme_sig, _scheme_ok) != before:
+        recolor_all()
 
 
 # ---------- tagging & placement ----------
@@ -87,8 +224,7 @@ def tag(view, sid: str) -> bool:
         return False
     s.set(SESSION_SETTING, sid)
     s.set(OPENED_SETTING, time.time())
-    if conf()["badges"]:
-        slot_for(sid)  # take a badge slot while the session owns a tab
+    _apply_color(view, slot_for(sid) if sync_schemes() else 0)
     return True
 
 
@@ -173,6 +309,31 @@ def panel_marks(window) -> Dict[str, str]:
     counts = tab_counts(window)
     slots = slots_of(list(counts) + list(_live)) if conf()["badges"] else {}
     return T.session_marks(counts, slots)
+
+
+def paint_panel(view, targets: Dict[int, Tuple[str, str]]) -> None:
+    """Underline every session row that owns tabs in its slot's hue."""
+    by_slot = {}  # type: Dict[int, List[sublime.Region]]
+    if conf()["colors"]:
+        window = view.window()
+        counts = tab_counts(window) if window is not None else {}
+        for row, (kind, sid) in targets.items():
+            if kind != "sess" or not sid or sid not in counts:
+                continue
+            slot = _slots.slot(sid)
+            if not slot:
+                continue
+            line = view.line(view.text_point(row, 0))
+            start = min(line.a + 4, line.b)  # skip "  ● "
+            by_slot.setdefault(slot, []).append(sublime.Region(start, line.b))
+    flags = sublime.DRAW_NO_FILL | sublime.DRAW_NO_OUTLINE | sublime.DRAW_SOLID_UNDERLINE
+    for slot in range(1, T.SLOTS + 1):
+        key = f"claude_session_slot_{slot}"
+        regions = by_slot.get(slot)
+        if regions:
+            view.add_regions(key, regions, T.region_scope(slot), "", flags)
+        else:
+            view.erase_regions(key)
 
 
 def focus_newest(window, sid: str) -> bool:

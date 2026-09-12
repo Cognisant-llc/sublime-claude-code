@@ -181,6 +181,7 @@ def start():
         _watcher.set_roots(_model.roots.watch_dirs())
     ST.set_sessions({s.sid: s.name for s in _model.sessions.values()},
                     [s.sid for s in _model.sessions.values() if s.live])
+    ST.recolor_all()  # slots are not persisted across restarts, tab tags are
     sublime.set_timeout(_tick, int(c["poll_ms"]))
     if c["auto_open"]:
         sublime.set_timeout(lambda: _ensure_panels(create=True), 300)
@@ -365,6 +366,7 @@ def _tick():
         if _dirty:
             changed = True
             _dirty = False
+    ST.sync()  # colour scheme / tint changed → recolour tagged tabs
     if not changed:
         # the user may have dragged the column border: re-flow to the new width
         for window in sublime.windows():
@@ -600,6 +602,7 @@ def render_view(view):
     view.settings().set("claude_activity_targets",
                         {str(k): list(v) for k, v in targets.items()})
     if view.substr(sublime.Region(0, view.size())) == text:
+        ST.paint_panel(view, targets)
         _set_status_text(view, A.summary(tree, live))
         return
     pos = view.viewport_position()
@@ -611,6 +614,7 @@ def render_view(view):
     for a, b in sel:
         view.sel().add(sublime.Region(min(a, view.size()), min(b, view.size())))
     view.set_viewport_position(pos, False)
+    ST.paint_panel(view, targets)
     _set_status_text(view, A.summary(tree, live))
 
 

@@ -33,6 +33,33 @@ def test_badge_glyphs():
     assert T.glyph(0) == "" and T.glyph(9) == ""
 
 
+def test_hues_and_scopes():
+    assert len(T.HUES) == T.SLOTS and len(set(T.HUES)) == T.SLOTS
+    assert T.region_scope(1) == "region.bluish" and T.region_scope(0) == ""
+    assert T.scheme_file(2) == "claude-session-2.hidden-color-scheme"
+
+
+def test_blend():
+    assert T.blend("#000000", "#ffffff", 0.5) == "#808080"
+    assert T.blend("#303841", "#6699cc", 0.0) == "#303841"
+    assert T.blend("#303841", "#6699cc", 1.0) == "#6699cc"
+    assert T.blend("#303841", "#6699cc", 5.0) == "#6699cc"  # clamped
+    assert T.blend("#abc", "#000", 0.0) == "#aabbcc"  # short form
+    assert T.blend("#30384180", "#6699cc", 0.0) == "#303841"  # alpha ignored
+
+
+def test_tinted_scheme_copies_the_users_scheme():
+    import json
+    base = {"name": "Mariana", "variables": {"blue2": "hsla(210, 13%, 40%, 0.7)"},
+            "globals": {"background": "var(blue3)", "line_highlight": "var(blue2)"},
+            "rules": [{"scope": "comment", "foreground": "var(blue6)"}]}
+    d = json.loads(T.scheme_json(base, "#303841", "#c695c6", 0.22))
+    assert d["variables"] == base["variables"] and d["rules"] == base["rules"]
+    assert d["globals"]["line_highlight"] == "var(blue2)"  # everything else kept
+    assert d["globals"]["background"] == T.blend("#303841", "#c695c6", 0.22)
+    assert base["globals"]["background"] == "var(blue3)"  # input untouched
+
+
 # ---------- insert_index ----------
 
 
@@ -78,7 +105,7 @@ def test_moves_for_reproduces_regroup_order():
 def test_session_marks():
     marks = T.session_marks({"s1": (2, 1), "s2": (0, 3), "s3": (1, 0)},
                             {"s1": 1, "s4": 4})
-    assert marks == {"s1": "  ① ⧉2  ⊟1", "s2": "  ⊟3", "s3": "  ⧉1", "s4": "  ④"}
+    assert marks == {"s1": "  ① ⧉2  ⊟1", "s2": "  ⊟3", "s3": "  ⧉1"}  # s4: slot but no tab
     assert T.session_marks({}, {}) == {}
 
 

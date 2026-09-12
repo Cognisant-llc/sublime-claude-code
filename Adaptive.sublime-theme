@@ -1,0 +1,54 @@
+// Claude Code IDE — session-coloured tabs. Merged into the theme of the same
+// name (Sublime combines same-named theme files across packages). Shows the
+// tab's own view tint (its colour scheme background) on unselected tabs, so a
+// per-view colour scheme colours the tab; untinted views keep the stock look
+// (background lightened 20% on dark schemes, darkened on light ones).
+{
+	"rules": [
+		{
+			"class": "tab_control",
+			"settings": {
+				"file_tab_style": [
+					"",
+					"rounded",
+					"square"
+				]
+			},
+			"attributes": [
+				"!selected"
+			],
+			"layer1.opacity": 1.0,
+			"tint_modifier": "color(white a(0.20))"
+		},
+		{
+			"class": "tab_control",
+			"settings": {
+				"file_tab_style": [
+					"",
+					"rounded",
+					"square"
+				]
+			},
+			"attributes": [
+				"!selected",
+				"file_medium"
+			],
+			"tint_modifier": "color(black a(0.20))"
+		},
+		{
+			"class": "tab_control",
+			"settings": {
+				"file_tab_style": [
+					"",
+					"rounded",
+					"square"
+				]
+			},
+			"attributes": [
+				"!selected",
+				"file_light"
+			],
+			"tint_modifier": "color(black a(0.20))"
+		}
+	]
+}

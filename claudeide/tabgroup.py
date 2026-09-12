@@ -2,10 +2,16 @@
 
 Every session that owns open tabs gets one of ``SLOTS`` badge slots; the
 Recent Activity panel shows the badge and the open/folded tab counts after the
-session's row (``① ⧉3``). The tab bar itself cannot show a per-tab mark:
-theme ``settings`` selectors only read global settings (verified: a view
-setting never matches), and ``View.set_name`` on a file tab detaches the
-file from the view (``file_name()`` becomes None — verified, never use it).
+session's row (``① ⧉3``) and underlines it in the slot's colour.
+
+The tab itself is coloured through the one channel Sublime offers: a tab is
+tinted with the background colour of *its own view's* colour scheme
+(``tab_control`` ``tint_index``). So every slot gets a hidden colour scheme
+that extends the user's scheme with a hued background, tagged views get that
+scheme, and a theme rule shipped with the package shows the tint layer on
+unselected tabs too. (Verified 2026-09-12. Dead ends, verified as well: theme
+``settings`` selectors only read global settings, and ``View.set_name`` on a
+file tab detaches the file — never use either.)
 
 Tabs of one session are also kept adjacent: a newly opened tab is placed right
 after the last tab of its session (``insert_index``); tabs the user dragged are
@@ -16,6 +22,60 @@ from typing import Dict, List, Optional, Sequence, Tuple
 
 GLYPHS = "①②③④⑤⑥⑦⑧"
 SLOTS = len(GLYPHS)
+
+# slot -> colour-scheme palette entry (every scheme defines region.<name>, and
+# sublime.ui_info() reports the resolved values), in an order that keeps
+# neighbouring slots far apart on the hue wheel
+HUES = ("bluish", "orangish", "greenish", "purplish", "redish", "cyanish", "yellowish", "pinkish")
+DEFAULT_TINT = 0.14
+SCHEME_PREFIX = "claude-session-"
+
+
+def hue_name(slot: int) -> str:
+    return HUES[slot - 1] if 1 <= slot <= SLOTS else ""
+
+
+def region_scope(slot: int) -> str:
+    """Scope that paints the slot's hue in a view (panel underline)."""
+    return "region." + hue_name(slot) if hue_name(slot) else ""
+
+
+def scheme_file(slot: int) -> str:
+    return f"{SCHEME_PREFIX}{slot}.hidden-color-scheme"
+
+
+def parse_hex(color: str) -> Tuple[int, int, int]:
+    c = color.strip().lstrip("#")
+    if len(c) == 3:
+        c = "".join(ch * 2 for ch in c)
+    if len(c) not in (6, 8):
+        raise ValueError(color)
+    return int(c[0:2], 16), int(c[2:4], 16), int(c[4:6], 16)
+
+
+def blend(base: str, hue: str, t: float) -> str:
+    """``base`` moved ``t`` (0..1) of the way towards ``hue``, as ``#rrggbb``."""
+    t = max(0.0, min(1.0, float(t)))
+    b, h = parse_hex(base), parse_hex(hue)
+    return "#" + "".join(f"{round(b[i] * (1 - t) + h[i] * t):02x}" for i in range(3))
+
+
+def tinted_scheme(base: dict, background: str, hue: str, tint: float) -> dict:
+    """Copy of the user's colour scheme (already decoded) with a hued
+    background. Copying keeps variables, globals and rules intact — an
+    ``extends`` scheme loses the base's variables (line highlight etc. fall
+    back to defaults, verified)."""
+    import copy
+    out = copy.deepcopy(base)
+    out["name"] = "Claude session tint"
+    out.setdefault("globals", {})["background"] = blend(background, hue, tint)
+    return out
+
+
+def scheme_json(base: dict, background: str, hue: str, tint: float) -> str:
+    import json
+    return json.dumps(tinted_scheme(base, background, hue, tint), indent=1,
+                      ensure_ascii=False) + chr(10)
 
 
 def glyph(slot: int) -> str:
@@ -129,7 +189,7 @@ def session_marks(counts: Dict[str, Tuple[int, int]], slots: Dict[str, int]) -> 
     for sid in set(counts) | set(slots):
         opened, folded = counts.get(sid, (0, 0))
         parts = []
-        g = glyph(slots.get(sid, 0))
+        g = glyph(slots.get(sid, 0)) if (opened or folded) else ""  # badge only with tabs
         if g:
             parts.append(g + (f" ⧉{opened}" if opened else ""))
         elif opened:

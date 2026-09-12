@@ -89,6 +89,14 @@ class ClaudeIdeDevRestoreTabsCommand(sublime_plugin.ApplicationCommand):
         sublime.set_timeout(reopen, 800)
 
 
+class ClaudeIdeDevRelayoutCommand(sublime_plugin.ApplicationCommand):
+    """Re-apply the active window's layout (forces the tab bar to repaint)."""
+
+    def run(self):
+        w = sublime.active_window()
+        w.set_layout(w.layout())
+
+
 class ClaudeIdeDumpStateCommand(sublime_plugin.ApplicationCommand):
     """Dump server/window state to <temp>/claude_ide_state.json.
 

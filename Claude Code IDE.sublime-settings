@@ -12,13 +12,26 @@
 	// position come back when the last review closes — grids included.
 	"diff_layout": "columns",
 
-	// Session tabs: every tab opened by or for a Claude session gets a badge
-	// in its title (① … ⑧, the same badge the session's row shows in the
-	// Recent Activity panel) and is placed next to the session's other tabs.
-	// Right-click a tab, or a session row in the panel, for the session menu
-	// (focus / copy paths / move / fold / close). 8 badges; further sessions
-	// stay unbadged until one frees up.
+	// Session tabs: every tab opened by or for a Claude session is coloured
+	// with that session's hue (like a browser tab group) and placed next to
+	// the session's other tabs; the Recent Activity panel underlines the
+	// session's row in the same hue and shows a badge with the open/folded
+	// tab counts (① ⧉3). Right-click a tab, or a session row in the panel,
+	// for the session menu (focus / copy paths / move / fold / close).
+	//
+	// How the colour works: a tab is painted with the background colour of
+	// its own view's colour scheme, so the plugin writes eight hidden colour
+	// schemes (your scheme + a hued background, taken from the scheme's own
+	// region palette) to Packages/User/Claude Code IDE Sessions/ and assigns
+	// one per session. The editor background of those tabs takes the same
+	// hue — "tint" sets how strong (0 = invisible, 1 = the pure hue; 0.1–0.25
+	// keeps text readable). Needs a .sublime-color-scheme (not .tmTheme) and
+	// the Default, Default Dark or Adaptive theme (other themes: copy the
+	// rules from Default.sublime-theme in this package). 8 colours; further
+	// sessions stay uncoloured until one frees up.
 	"session_tabs": {
+		"colors": true,
+		"tint": 0.14,
 		"badges": true,
 		"group": true
 	},

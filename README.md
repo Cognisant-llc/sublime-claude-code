@@ -57,13 +57,14 @@ A **project is the directory you opened `claude` in** — the session's working 
 
 ### Session tabs (0.3.8)
 
-Every tab a Claude session opens or writes carries that session, so the tab bar can be *grouped* even though Sublime cannot colour or label a single tab (theme `settings` selectors only read global settings, and `View.set_name` on a file tab detaches the file — both verified, neither is used):
+Every tab a Claude session opens or writes carries that session, and the tab bar treats them like a browser tab group:
 
+- **Coloured tabs**: each session with open tabs gets one of eight hues (taken from your colour scheme's own palette); its tabs are painted in that hue, muted while unselected. Sublime colours a tab from the background of the tab's own colour scheme, so the plugin writes eight hidden schemes (your scheme + a hued background) to `Packages/User/Claude Code IDE Sessions/` and assigns one per session — the editor background of those tabs takes the same hue; `session_tabs.tint` sets how strong. A small theme rule shipped for Default / Default Dark / Adaptive shows the hue on unselected tabs.
 - **Adjacent tabs**: a tab opened by or for a session (Recent Activity click, `openFile`, `scripts/open_file.py`, or any file the session wrote) is placed right after that session's other tabs. Tabs you drag by hand are never moved again; *Session Tabs — Regroup All Tabs by Session* re-clusters the whole pane on demand.
-- **Panel badges**: a session row shows `① ⧉3` (badge, open tabs) and `⊟2` (folded tabs). Clicking the row focuses the session's newest tab, or reopens its folded tabs.
+- **Panel**: the session's row is underlined in its hue and shows `① ⧉3` (badge, open tabs) and `⊟2` (folded tabs). Clicking the row focuses the session's newest tab, or reopens its folded tabs.
 - **Session menu**: right-click a tab (or a session row in the panel) → *Session Tabs*: focus newest, copy the paths of the session's tabs, move them to the front/back of the pane, fold them (close and remember on the window — reopen from the row) or close them (unsaved tabs are kept). The same actions are in the command palette for the active tab's session.
 
-`scripts/open_file.py` tags the tab with `$CLAUDE_CODE_SESSION_ID` automatically (`--session <id>` to override). Settings: `session_tabs.badges`, `session_tabs.group`.
+`scripts/open_file.py` tags the tab with `$CLAUDE_CODE_SESSION_ID` automatically (`--session <id>` to override). Settings: `session_tabs.colors`, `tint`, `badges`, `group`.
 
 ## Install (manual — Package Control listing pending)
 

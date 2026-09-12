@@ -27,8 +27,26 @@ SLOTS = len(GLYPHS)
 # sublime.ui_info() reports the resolved values), in an order that keeps
 # neighbouring slots far apart on the hue wheel
 HUES = ("bluish", "orangish", "greenish", "purplish", "redish", "cyanish", "yellowish", "pinkish")
-DEFAULT_TINT = 0.14
+DEFAULT_TINT = 0.28
+DEFAULT_PALETTE = "vivid"
 SCHEME_PREFIX = "claude-session-"
+
+# "vivid": eight hues evenly spread in OKLCH (L 0.72, C 0.19) so neighbouring
+# slots differ clearly even after blending into the background; "scheme" uses
+# the colour scheme's own (often pastel) region palette instead
+VIVID = {
+    "bluish": "#44a5ff", "orangish": "#fb7c00", "greenish": "#43c251", "purplish": "#b884ff",
+    "redish": "#ff6a65", "cyanish": "#00c5d3", "yellowish": "#caa000", "pinkish": "#f46cbf",
+}
+
+
+def hue_color(slot: int, palette: str, scheme_palette: Dict[str, str]) -> str:
+    """Source colour of a slot: the vivid table, or the scheme's own region
+    colour (falling back to the vivid one when the scheme lacks it)."""
+    name = hue_name(slot)
+    if palette != "scheme":
+        return VIVID.get(name, "#888888")
+    return scheme_palette.get(name) or VIVID.get(name, "#888888")
 
 
 def hue_name(slot: int) -> str:

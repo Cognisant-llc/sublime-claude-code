@@ -21,17 +21,20 @@
 	//
 	// How the colour works: a tab is painted with the background colour of
 	// its own view's colour scheme, so the plugin writes eight hidden colour
-	// schemes (your scheme + a hued background, taken from the scheme's own
-	// region palette) to Packages/User/Claude Code IDE Sessions/ and assigns
-	// one per session. The editor background of those tabs takes the same
-	// hue — "tint" sets how strong (0 = invisible, 1 = the pure hue; 0.1–0.25
-	// keeps text readable). Needs a .sublime-color-scheme (not .tmTheme) and
+	// schemes (your scheme + a hued background) to Packages/User/Claude Code
+	// IDE Sessions/ and assigns one per session. "palette": "vivid" = eight
+	// evenly spread hues (default, clearly distinct), "scheme" = the colour
+	// scheme's own region colours (softer, matches the scheme). The editor
+	// background of those tabs takes the same hue — "tint" sets how strong
+	// (0 = invisible, 1 = the pure hue; 0.15–0.4 keeps text readable).
+	// Needs a .sublime-color-scheme (not .tmTheme) and
 	// the Default, Default Dark or Adaptive theme (other themes: copy the
 	// rules from Default.sublime-theme in this package). 8 colours; further
 	// sessions stay uncoloured until one frees up.
 	"session_tabs": {
 		"colors": true,
-		"tint": 0.14,
+		"palette": "vivid",
+		"tint": 0.28,
 		"badges": true,
 		"group": true
 	},

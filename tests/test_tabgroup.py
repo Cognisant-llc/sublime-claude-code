@@ -142,3 +142,11 @@ def test_merge_schemes_applies_overrides_in_order():
     assert [r["scope"] for r in m["rules"]] == ["comment", "markup.highlight"]
     assert T.merge_schemes([]) == {}
 
+
+def test_hue_color_palettes():
+    scheme = {"bluish": "#6699cc"}
+    assert T.hue_color(1, "vivid", scheme) == T.VIVID["bluish"]
+    assert T.hue_color(1, "scheme", scheme) == "#6699cc"
+    assert T.hue_color(2, "scheme", scheme) == T.VIVID["orangish"]  # scheme lacks it → vivid
+    assert len(T.VIVID) == T.SLOTS and all(T.parse_hex(v) for v in T.VIVID.values())
+

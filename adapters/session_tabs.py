@@ -40,6 +40,7 @@ def conf():
     return {
         "colors": bool(s.get("colors", True)),
         "tint": float(s.get("tint", T.DEFAULT_TINT)),
+        "palette": str(s.get("palette", T.DEFAULT_PALETTE)),
         "badges": bool(s.get("badges", True)),
         "group": bool(s.get("group", True)),
     }
@@ -134,7 +135,7 @@ def sync_schemes() -> bool:
     if base.endswith(".tmTheme"):
         _scheme_ok = False  # `extends` needs a .sublime-color-scheme base
         return False
-    sig = (base, palette.get("background"), round(c["tint"], 3),
+    sig = (base, palette.get("background"), round(c["tint"], 3), c["palette"],
            tuple(palette.get(h, "") for h in T.HUES))
     if sig == _scheme_sig and _scheme_ok:
         return True
@@ -146,7 +147,7 @@ def sync_schemes() -> bool:
     try:
         os.makedirs(d, exist_ok=True)
         for slot in range(1, T.SLOTS + 1):
-            hue = palette.get(T.hue_name(slot)) or palette.get("accent") or "#888888"
+            hue = T.hue_color(slot, c["palette"], palette)
             text = T.scheme_json(data, palette["background"], hue, c["tint"])
             path = os.path.join(d, T.scheme_file(slot))
             if not os.path.exists(path) or open(path, encoding="utf-8").read() != text:
